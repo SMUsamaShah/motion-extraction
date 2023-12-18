@@ -1,0 +1,31 @@
+<html>
+<style>
+    #canvasWrapper {
+        position: relative;
+    }
+
+    #SourceVideo {
+        display: none;
+    }
+</style>
+
+<body>
+    <input type="file" id="videoFile" accept="video/*"><br>
+    <input type="text" id="videoURL" placeholder="Enter video URL"><br>
+    <button id="startButton">Start</button><br>
+    <!-- https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4 -->
+    
+    <!-- Slider for opacity control -->
+    <br>
+    <input style="width: 100%" type="range" id="rangeOpacity" min="0" max="1" step="0.01" value="0.5">
+    <input style="width: 100%" type="range" id="delay" min="0" max="200" step="1" value="1">
+    <video style="display: block;" id="sVideo" src="waterfall.mp4" loop controls muted autoplay crossorigin="anonymous"></video>
+    <div id="canvasWrapper" style="position: relative;">
+        <canvas id="originalCanvas" style="position: absolute; top: 0; left: 0;"></canvas>
+        <canvas id="invertedCanvas" style="position: absolute; top: 0; left: 0;"></canvas>
+    </div>
+
+</body>
+<script src="script.js"></script>
+
+</html>
