@@ -64,6 +64,9 @@
     const settings = {
       mode: 'motion',
       delaySeconds: 0.1,
+      delayR: 0,       // RGB time-shift: per-channel delays (seconds)
+      delayG: 0.1,
+      delayB: 0.2,
       strength: 0.5,   // blend of the top layer (0.5 == clean cancellation)
       reveal: 0,       // 0 = pure effect; >0 lets the real video show through
       blur: 0,         // px
@@ -121,6 +124,9 @@
     function setSettings(next) {
       if (next) Object.assign(settings, next);
       settings.delaySeconds = clamp(settings.delaySeconds, 0, MAX_DELAY_SECONDS);
+      settings.delayR = clamp(settings.delayR, 0, MAX_DELAY_SECONDS);
+      settings.delayG = clamp(settings.delayG, 0, MAX_DELAY_SECONDS);
+      settings.delayB = clamp(settings.delayB, 0, MAX_DELAY_SECONDS);
       settings.strength = clamp(settings.strength, 0, 1);
       settings.reveal = clamp(settings.reveal, 0, 1);
       settings.blur = clamp(settings.blur, 0, 40);
@@ -171,9 +177,15 @@
 
       const mode = MODES[settings.mode] || MODES.motion;
 
-      // how far back we need to look, and how sparsely to store to stay bounded
-      const spacing = Math.round(settings.delaySeconds * efps); // frames
-      const maxBack = mode.kind === 'rgb' ? spacing * 2 : spacing;
+      // frame offsets this mode needs to reach into the past
+      const isRgb = mode.kind === 'rgb';
+      const rF = isRgb ? Math.round(settings.delayR * efps) : 0;
+      const gF = isRgb ? Math.round(settings.delayG * efps) : 0;
+      const bF = isRgb ? Math.round(settings.delayB * efps) : 0;
+      const topF = isRgb ? 0 : Math.round(settings.delaySeconds * efps);
+
+      // pick a storage stride so the buffer never exceeds MAX_FRAMES
+      const maxBack = Math.max(rF, gF, bF, topF);
       const newStride = Math.max(1, Math.ceil(maxBack / (MAX_FRAMES - 1)));
       if (newStride !== stride) { stride = newStride; stored = 0; writeIndex = 0; sinceStore = 1e9; }
       ensureCapacity(Math.floor(maxBack / stride) + 2);
@@ -197,19 +209,23 @@
         refValid = true;
       }
 
+      // a source frame `frames` behind now (live video when 0 or not yet buffered)
+      const pickAt = frames => {
+        if (frames <= 0) return video;
+        const back = Math.round(frames / stride);
+        return stored > back ? storedAt(back) : video;
+      };
+
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = 'source-over';
 
-      if (mode.kind === 'rgb') {
-        const gBack = Math.round(spacing / stride);
-        const bBack = Math.round((spacing * 2) / stride);
-        const gSrc = stored > gBack ? storedAt(gBack) : video;
-        const bSrc = stored > bBack ? storedAt(bBack) : video;
+      if (isRgb) {
+        // each channel from its own moment -> static stays grey, motion gains colour
         ctx.filter = 'none';
         ctx.clearRect(0, 0, bufW, bufH);
-        addChannel(video, '#ff0000'); // red   = now
-        addChannel(gSrc, '#00ff00');  // green = delayed
-        addChannel(bSrc, '#0000ff');  // blue  = more delayed
+        addChannel(pickAt(rF), '#ff0000'); // red
+        addChannel(pickAt(gF), '#00ff00'); // green
+        addChannel(pickAt(bF), '#0000ff'); // blue
       } else {
         // base layer: the current frame (freshest, straight from the video)
         ctx.filter = fstr(mode.base);
@@ -221,7 +237,7 @@
         if (settings.frozen) {
           top = refValid ? reference : null;
         } else {
-          const back = Math.round(spacing / stride);
+          const back = Math.round(topF / stride);
           if (stored > back) top = storedAt(back);
         }
         if (top) {

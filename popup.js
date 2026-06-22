@@ -15,6 +15,9 @@ const FALLBACK_MODES = [
 const DEFAULTS = {
   mode: 'motion',
   delaySeconds: 0.1,
+  delayR: 0,
+  delayG: 0.1,
+  delayB: 0.2,
   strength: 0.5,
   reveal: 0,
   blur: 0,
@@ -26,6 +29,9 @@ const DEFAULTS = {
 const FIELDS = [
   { id: 'mode', key: 'mode', kind: 'string' },
   { id: 'delay', key: 'delaySeconds', kind: 'number', fmt: v => `${(+v).toFixed(2)} s` },
+  { id: 'delayR', key: 'delayR', kind: 'number', fmt: v => `${(+v).toFixed(2)} s` },
+  { id: 'delayG', key: 'delayG', kind: 'number', fmt: v => `${(+v).toFixed(2)} s` },
+  { id: 'delayB', key: 'delayB', kind: 'number', fmt: v => `${(+v).toFixed(2)} s` },
   { id: 'strength', key: 'strength', kind: 'number', fmt: v => (+v).toFixed(2) },
   { id: 'reveal', key: 'reveal', kind: 'number', fmt: v => (+v).toFixed(2) },
   { id: 'blur', key: 'blur', kind: 'number', fmt: v => `${v} px` },
@@ -58,6 +64,11 @@ function reflect() {
     else el.value = state[f.key];
     if (f.fmt) $(f.id + 'Val').textContent = f.fmt(state[f.key]);
   }
+  // RGB time-shift has its own per-channel delays; everything else uses the
+  // single delay + strength + freeze.
+  const isRgb = state.mode === 'rgb';
+  document.querySelectorAll('.overlay-only').forEach(e => { e.style.display = isRgb ? 'none' : ''; });
+  document.querySelectorAll('.rgb-only').forEach(e => { e.style.display = isRgb ? '' : 'none'; });
   toggle.textContent = running ? 'Stop' : 'Start';
   toggle.classList.toggle('on', running);
 }
@@ -65,6 +76,9 @@ function reflect() {
 const settings = () => ({
   mode: state.mode,
   delaySeconds: +state.delaySeconds,
+  delayR: +state.delayR,
+  delayG: +state.delayG,
+  delayB: +state.delayB,
   strength: +state.strength,
   reveal: +state.reveal,
   blur: +state.blur,

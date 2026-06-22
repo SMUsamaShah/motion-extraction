@@ -28,10 +28,10 @@ grey.
 
 - **Motion (colour / mono / boosted / glow)** — the invert-and-delay technique.
   `boosted` cranks contrast/saturation to surface tiny motion; `glow` adds bloom.
-- **RGB time-shift** — delays the red, green and blue channels by different
-  amounts (Posy's 0 / d / 2d trick) so moving things leave **rainbow trails**.
-  Static stays grey because the three channels still match. Driven by the same
-  Delay control.
+- **RGB time-shift** — delays the red, green and blue channels by independent
+  amounts (Posy's `0 / 3 / 6` trick) so moving things leave **rainbow trails**.
+  Static stays grey because the three channels still match. Selecting this mode
+  swaps the single Delay control for three per-channel delay sliders.
 
 ## Install (unpacked)
 
