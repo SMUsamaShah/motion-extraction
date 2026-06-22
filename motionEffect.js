@@ -37,6 +37,8 @@
     mono:    { label: 'Motion (mono)',    kind: 'overlay', base: 'grayscale(1)', overlay: 'grayscale(1) invert(1)', canvas: 'none' },
     boosted: { label: 'Motion (boosted)', kind: 'overlay', base: 'none',         overlay: 'invert(1)',              canvas: 'saturate(4) contrast(1.6)' },
     glow:    { label: 'Motion (glow)',    kind: 'overlay', base: 'none',         overlay: 'invert(1)',              canvas: 'contrast(1.4) brightness(1.3)' },
+    black:   { label: 'Motion on black',  kind: 'difference', base: 'none',      overlay: 'none',                   canvas: 'brightness(1.5) contrast(1.7)' },
+    isolate: { label: 'Moving on black',  kind: 'mask',       base: 'none',      overlay: 'none',                   canvas: 'none' },
     rgb:     { label: 'RGB time-shift',   kind: 'rgb',     base: 'none',         overlay: 'none',                   canvas: 'none' },
   };
 
@@ -226,6 +228,41 @@
         addChannel(pickAt(rF), '#ff0000'); // red
         addChannel(pickAt(gF), '#00ff00'); // green
         addChannel(pickAt(bF), '#0000ff'); // blue
+      } else if (mode.kind === 'difference') {
+        // |current - delayed|: black where nothing changed, bright where it did
+        const delayed = pickAt(topF);
+        ctx.filter = fstr('none');
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.clearRect(0, 0, bufW, bufH);
+        ctx.drawImage(delayed, 0, 0, bufW, bufH);
+        ctx.globalCompositeOperation = 'difference';
+        ctx.drawImage(video, 0, 0, bufW, bufH);
+      } else if (mode.kind === 'mask') {
+        // use the motion difference as a matte to reveal the moving subject
+        // (in its real colours) over black
+        const delayed = pickAt(topF);
+        sctx.globalAlpha = 1;
+        sctx.globalCompositeOperation = 'source-over';
+        sctx.filter = fstr('none');
+        sctx.clearRect(0, 0, bufW, bufH);
+        sctx.drawImage(delayed, 0, 0, bufW, bufH);
+        sctx.globalCompositeOperation = 'difference';
+        sctx.drawImage(video, 0, 0, bufW, bufH);
+        sctx.globalCompositeOperation = 'copy';   // collapse the matte to luminance
+        sctx.filter = 'grayscale(1)';
+        sctx.drawImage(scratch, 0, 0, bufW, bufH);
+        sctx.filter = 'none';
+        sctx.globalCompositeOperation = 'lighter'; // amplify so real motion fully reveals
+        sctx.drawImage(scratch, 0, 0, bufW, bufH);
+        sctx.drawImage(scratch, 0, 0, bufW, bufH);
+
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.filter = fstr('none');
+        ctx.clearRect(0, 0, bufW, bufH);
+        ctx.drawImage(video, 0, 0, bufW, bufH);
+        ctx.globalCompositeOperation = 'multiply'; // keep the frame only inside the matte
+        ctx.filter = 'none';
+        ctx.drawImage(scratch, 0, 0, bufW, bufH);
       } else {
         // base layer: the current frame (freshest, straight from the video)
         ctx.filter = fstr(mode.base);

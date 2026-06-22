@@ -104,7 +104,7 @@
 
   function modeList() {
     const modes = (window.MotionEffect && window.MotionEffect.MODES) || {};
-    return Object.keys(modes).map(k => [k, modes[k].label]);
+    return Object.keys(modes).map(k => [k, modes[k].label, modes[k].kind]);
   }
 
   window.addEventListener('fullscreenchange', positionOverlay, true);

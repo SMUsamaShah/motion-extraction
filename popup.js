@@ -5,11 +5,13 @@
 // Fallback mode list (used if the content script isn't reachable yet). The
 // content script reports the authoritative list via the mx-status response.
 const FALLBACK_MODES = [
-  ['motion', 'Motion (colour)'],
-  ['mono', 'Motion (mono)'],
-  ['boosted', 'Motion (boosted)'],
-  ['glow', 'Motion (glow)'],
-  ['rgb', 'RGB time-shift'],
+  ['motion', 'Motion (colour)', 'overlay'],
+  ['mono', 'Motion (mono)', 'overlay'],
+  ['boosted', 'Motion (boosted)', 'overlay'],
+  ['glow', 'Motion (glow)', 'overlay'],
+  ['black', 'Motion on black', 'difference'],
+  ['isolate', 'Moving on black', 'mask'],
+  ['rgb', 'RGB time-shift', 'rgb'],
 ];
 
 const DEFAULTS = {
@@ -45,10 +47,13 @@ const hint = $('hint');
 
 let state = { ...DEFAULTS };
 let running = false;
+let modeKinds = {};
 
 function fillModes(modes) {
   $('mode').innerHTML = '';
-  for (const [value, label] of modes) {
+  modeKinds = {};
+  for (const [value, label, kind] of modes) {
+    modeKinds[value] = kind || 'overlay';
     const o = document.createElement('option');
     o.value = value;
     o.textContent = label;
@@ -64,11 +69,13 @@ function reflect() {
     else el.value = state[f.key];
     if (f.fmt) $(f.id + 'Val').textContent = f.fmt(state[f.key]);
   }
-  // RGB time-shift has its own per-channel delays; everything else uses the
-  // single delay + strength + freeze.
-  const isRgb = state.mode === 'rgb';
-  document.querySelectorAll('.overlay-only').forEach(e => { e.style.display = isRgb ? 'none' : ''; });
-  document.querySelectorAll('.rgb-only').forEach(e => { e.style.display = isRgb ? '' : 'none'; });
+  // Show only the controls a mode uses: RGB has per-channel delays; the
+  // invert-overlay modes add strength + freeze; difference/mask just use delay.
+  const kind = modeKinds[state.mode] || 'overlay';
+  const setVis = (sel, on) => document.querySelectorAll(sel).forEach(e => { e.style.display = on ? '' : 'none'; });
+  setVis('.delay-single', kind !== 'rgb');
+  setVis('.rgb-only', kind === 'rgb');
+  setVis('.overlay-only', kind === 'overlay');
   toggle.textContent = running ? 'Stop' : 'Start';
   toggle.classList.toggle('on', running);
 }

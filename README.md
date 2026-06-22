@@ -26,8 +26,15 @@ grey.
 
 ## Modes
 
-- **Motion (colour / mono / boosted / glow)** — the invert-and-delay technique.
+- **Motion (colour / mono / boosted / glow)** — the invert-and-delay technique;
+  static averages to flat **grey**, motion appears as deviations from it.
   `boosted` cranks contrast/saturation to surface tiny motion; `glow` adds bloom.
+- **Motion on black** — uses a *Difference* blend (`|current − delayed|`) instead
+  of invert-and-delay, so static is **black** and motion appears bright from it.
+  Punchier than the grey look.
+- **Moving on black** — uses the motion difference as a matte to reveal the
+  actual moving subject (in its real colours) over black, rather than just the
+  changed edges.
 - **RGB time-shift** — delays the red, green and blue channels by independent
   amounts (Posy's `0 / 3 / 6` trick) so moving things leave **rainbow trails**.
   Static stays grey because the three channels still match. Selecting this mode
