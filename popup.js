@@ -1,6 +1,6 @@
 // popup.js
-// Controls live in the popup; the actual effect lives in the page's content
-// script. The popup just sends settings over and remembers them in storage.
+// Controls live in the popup; the effect lives in the page's content script.
+// The popup sends settings over and remembers them in storage.
 
 // Fallback mode list (used if the content script isn't reachable yet). The
 // content script reports the authoritative list via the mx-status response.
@@ -9,51 +9,67 @@ const FALLBACK_MODES = [
   ['mono', 'Motion (mono)'],
   ['boosted', 'Motion (boosted)'],
   ['glow', 'Motion (glow)'],
+  ['rgb', 'RGB time-shift'],
 ];
 
-const DEFAULTS = { mode: 'motion', delay: 3, strength: 0.5, reveal: 0 };
+const DEFAULTS = {
+  mode: 'motion',
+  delaySeconds: 0.1,
+  strength: 0.5,
+  reveal: 0,
+  blur: 0,
+  tint: 0,
+  frozen: false,
+};
+
+// Each control: element id, the setting it drives, and how to read/show it.
+const FIELDS = [
+  { id: 'mode', key: 'mode', kind: 'string' },
+  { id: 'delay', key: 'delaySeconds', kind: 'number', fmt: v => `${(+v).toFixed(2)} s` },
+  { id: 'strength', key: 'strength', kind: 'number', fmt: v => (+v).toFixed(2) },
+  { id: 'reveal', key: 'reveal', kind: 'number', fmt: v => (+v).toFixed(2) },
+  { id: 'blur', key: 'blur', kind: 'number', fmt: v => `${v} px` },
+  { id: 'tint', key: 'tint', kind: 'number', fmt: v => (+v === 0 ? 'off' : `${v}°`) },
+  { id: 'freeze', key: 'frozen', kind: 'bool', event: 'change' },
+];
 
 const $ = id => document.getElementById(id);
-const els = {
-  toggle: $('toggle'),
-  mode: $('mode'),
-  delay: $('delay'),
-  strength: $('strength'),
-  reveal: $('reveal'),
-  hint: $('hint'),
-};
+const toggle = $('toggle');
+const hint = $('hint');
 
 let state = { ...DEFAULTS };
 let running = false;
 
 function fillModes(modes) {
-  els.mode.innerHTML = '';
+  $('mode').innerHTML = '';
   for (const [value, label] of modes) {
     const o = document.createElement('option');
     o.value = value;
     o.textContent = label;
-    els.mode.appendChild(o);
+    $('mode').appendChild(o);
   }
-  els.mode.value = state.mode;
+  $('mode').value = state.mode;
 }
 
 function reflect() {
-  els.mode.value = state.mode;
-  els.delay.value = state.delay;
-  els.strength.value = state.strength;
-  els.reveal.value = state.reveal;
-  $('delayVal').textContent = state.delay;
-  $('strengthVal').textContent = (+state.strength).toFixed(2);
-  $('revealVal').textContent = (+state.reveal).toFixed(2);
-  els.toggle.textContent = running ? 'Stop' : 'Start';
-  els.toggle.classList.toggle('on', running);
+  for (const f of FIELDS) {
+    const el = $(f.id);
+    if (f.kind === 'bool') el.checked = !!state[f.key];
+    else el.value = state[f.key];
+    if (f.fmt) $(f.id + 'Val').textContent = f.fmt(state[f.key]);
+  }
+  toggle.textContent = running ? 'Stop' : 'Start';
+  toggle.classList.toggle('on', running);
 }
 
 const settings = () => ({
   mode: state.mode,
-  delay: +state.delay,
+  delaySeconds: +state.delaySeconds,
   strength: +state.strength,
   reveal: +state.reveal,
+  blur: +state.blur,
+  tint: +state.tint,
+  frozen: !!state.frozen,
 });
 
 const save = () => chrome.storage.local.set({ mxState: state });
@@ -81,17 +97,13 @@ async function init() {
   reflect();
 }
 
-els.toggle.addEventListener('click', async () => {
-  els.hint.textContent = '';
+toggle.addEventListener('click', async () => {
+  hint.textContent = '';
   if (!running) {
     const resp = await send('mx-start', { settings: settings() });
-    if (resp && resp.ok) {
-      running = true;
-    } else if (resp && resp.unreachable) {
-      els.hint.textContent = 'Open a normal web page with a video and reload it, then try again.';
-    } else {
-      els.hint.textContent = (resp && resp.error) || 'Could not start.';
-    }
+    if (resp && resp.ok) running = true;
+    else if (resp && resp.unreachable) hint.textContent = 'Open a normal web page with a video and reload it, then try again.';
+    else hint.textContent = (resp && resp.error) || 'Could not start.';
   } else {
     await send('mx-stop');
     running = false;
@@ -100,9 +112,10 @@ els.toggle.addEventListener('click', async () => {
   reflect();
 });
 
-for (const key of ['mode', 'delay', 'strength', 'reveal']) {
-  els[key].addEventListener('input', async () => {
-    state[key] = els[key].value;
+for (const f of FIELDS) {
+  $(f.id).addEventListener(f.event || 'input', async () => {
+    const el = $(f.id);
+    state[f.key] = f.kind === 'bool' ? el.checked : el.value;
     reflect();
     if (running) await send('mx-update', { settings: settings() });
     save();

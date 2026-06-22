@@ -7,7 +7,7 @@ const video = document.getElementById('src');
 const out = document.getElementById('out');
 const effect = MotionEffect.create(out);
 
-const settings = { mode: 'motion', delay: 3, strength: 0.5, reveal: 0 };
+const settings = { mode: 'motion', delaySeconds: 0.1, strength: 0.5, reveal: 0, blur: 0, tint: 0, frozen: false };
 
 // Populate the mode dropdown straight from the engine's MODES table.
 const modeSel = document.getElementById('mode');
@@ -20,15 +20,22 @@ for (const [key, mode] of Object.entries(MotionEffect.MODES)) {
 
 function applySettings() {
   settings.mode = modeSel.value;
-  settings.delay = +document.getElementById('delay').value;
+  settings.delaySeconds = +document.getElementById('delay').value;
   settings.strength = +document.getElementById('strength').value;
-  document.getElementById('delayVal').textContent = settings.delay;
+  settings.blur = +document.getElementById('blur').value;
+  settings.tint = +document.getElementById('tint').value;
+  settings.frozen = document.getElementById('freeze').checked;
+
+  document.getElementById('delayVal').textContent = settings.delaySeconds.toFixed(2) + ' s';
   document.getElementById('strengthVal').textContent = settings.strength.toFixed(2);
+  document.getElementById('blurVal').textContent = settings.blur + ' px';
+  document.getElementById('tintVal').textContent = settings.tint === 0 ? 'off' : settings.tint + '°';
   effect.setSettings(settings);
 }
-for (const id of ['mode', 'delay', 'strength']) {
+for (const id of ['mode', 'delay', 'strength', 'blur', 'tint']) {
   document.getElementById(id).addEventListener('input', applySettings);
 }
+document.getElementById('freeze').addEventListener('change', applySettings);
 applySettings();
 
 // "show source" hides the result canvas so you can compare with the raw video.

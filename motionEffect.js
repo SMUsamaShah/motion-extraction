@@ -1,39 +1,43 @@
 // motionEffect.js
 // Core, page-agnostic motion-extraction engine.
 //
-// The technique (from Posy's "Motion Extraction" video):
-//   Take the footage, duplicate it, invert the duplicate's colours, set it to
-//   50% strength and lay it back on top of the original, offset by a few frames
-//   in time. Wherever nothing moved between the two moments a colour and its
-//   inverse blend to flat grey and cancel out; only the parts that changed
-//   (i.e. motion) survive, standing out against the grey.
+// The base technique (Posy, "Motion Extraction"): duplicate the footage,
+// invert it, make it 50% transparent, and shift it in time. Where nothing
+// changed between the two moments a colour and its inverse blend to flat grey
+// and cancel; only motion survives.
 //
-// Why it's built this way:
-//   * We never call getImageData()/toDataURL(). Drawing a cross-origin <video>
-//     to a canvas "taints" it, but only *reading pixels back* throws — and we
-//     never read back. So the effect works on cross-origin videos (most of the
-//     web), which the old per-pixel version could not.
-//   * Inversion / desaturation is done with ctx.filter (GPU-friendly) instead
-//     of a per-pixel JS loop.
-//   * Past frames live in a small ring of offscreen canvases so the delayed
-//     frame is a cheap lookup. The ring only grows to the chosen delay, so
-//     memory stays bounded (the old code allocated ~1.6 GB at 1080p).
+// This engine also implements the variations he demonstrates:
+//   * Delay in *seconds* (1 frame for fast motion ... 5+ seconds for slow
+//     drift), via a time-based frame buffer.
+//   * Freeze the duplicate  -> compare every frame to one frozen reference and
+//     watch change accumulate over time.
+//   * RGB time-shift         -> delay the red/green/blue channels by different
+//     amounts (his 0/3/6 trick) for rainbow motion trails.
+//   * Blur                   -> suppress fine detail so only larger motion shows.
+//   * Tint                   -> recolour the (grey) motion to any hue.
+//
+// Implementation notes:
+//   * We never call getImageData()/toDataURL(); drawing a cross-origin <video>
+//     only "taints" the canvas, and we never read pixels back -> works on
+//     cross-origin videos. Inversion/grayscale/blur use ctx.filter (GPU-side).
+//   * History lives in a ring of offscreen canvases. For long delays we store
+//     every Nth frame (a "stride") so memory stays bounded to MAX_FRAMES no
+//     matter how long the delay.
 
 (function () {
-  const MAX_DELAY = 60;          // upper bound for the delay control (frames)
-  const BUFFER_LONG_SIDE = 960;  // cap offscreen buffer resolution (memory/perf)
+  const MAX_FRAMES = 120;        // hard cap on buffered frames (memory bound)
+  const BUFFER_LONG_SIDE = 854;  // cap buffer resolution (long side, px)
+  const MAX_DELAY_SECONDS = 6;
 
-  // Each mode describes how the two layers are filtered and how the finished
-  // canvas is post-processed. This is the place to add new looks — see README.
-  //   base:    filter applied to the current frame (bottom layer)
-  //   overlay: filter applied to the delayed frame (top layer). Must include
-  //            invert(1) for the cancellation to work.
-  //   canvas:  CSS filter applied to the whole result (post-processing)
+  // kind 'overlay' = the invert-and-delay technique (base + inverted top layer).
+  // kind 'rgb'     = the channel time-shift technique (custom render path).
+  //   base/overlay are ctx.filter strings; canvas is a CSS filter on the result.
   const MODES = {
-    motion:  { label: 'Motion (colour)',  base: 'none',         overlay: 'invert(1)',              canvas: 'none' },
-    mono:    { label: 'Motion (mono)',    base: 'grayscale(1)', overlay: 'grayscale(1) invert(1)', canvas: 'none' },
-    boosted: { label: 'Motion (boosted)', base: 'none',         overlay: 'invert(1)',              canvas: 'saturate(4) contrast(1.6)' },
-    glow:    { label: 'Motion (glow)',    base: 'none',         overlay: 'invert(1)',              canvas: 'contrast(1.4) brightness(1.3)' },
+    motion:  { label: 'Motion (colour)',  kind: 'overlay', base: 'none',         overlay: 'invert(1)',              canvas: 'none' },
+    mono:    { label: 'Motion (mono)',    kind: 'overlay', base: 'grayscale(1)', overlay: 'grayscale(1) invert(1)', canvas: 'none' },
+    boosted: { label: 'Motion (boosted)', kind: 'overlay', base: 'none',         overlay: 'invert(1)',              canvas: 'saturate(4) contrast(1.6)' },
+    glow:    { label: 'Motion (glow)',    kind: 'overlay', base: 'none',         overlay: 'invert(1)',              canvas: 'contrast(1.4) brightness(1.3)' },
+    rgb:     { label: 'RGB time-shift',   kind: 'rgb',     base: 'none',         overlay: 'none',                   canvas: 'none' },
   };
 
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -41,100 +45,204 @@
   function createMotionEffect(canvas) {
     const ctx = canvas.getContext('2d');
 
-    let ring = [];          // ring buffer of offscreen frame canvases
-    let writeIndex = 0;     // next slot to write into
-    let filled = 0;         // how many slots hold a real frame
-    let bufW = 0, bufH = 0; // current buffer resolution
+    // sparse ring of past frames (spacing = `stride` source frames)
+    let ring = [];
+    let capacity = 0;
+    let writeIndex = 0;
+    let stored = 0;
+    let stride = 1;
+    let sinceStore = 1e9;
+
+    let scratch = null, sctx = null;          // for RGB channel compositing
+    let reference = null, refCtx = null;      // frozen reference frame
+    let refValid = false;
+
+    let bufW = 0, bufH = 0;
+    let fps = 30, lastT = 0;                   // estimated source frame rate
+    let wasFrozen = false;
 
     const settings = {
       mode: 'motion',
-      delay: 3,       // frames between the two copies
-      strength: 0.5,  // blend of the inverted layer (0.5 == clean cancellation)
-      reveal: 0,      // 0 = pure effect; >0 lets the real video show through
+      delaySeconds: 0.1,
+      strength: 0.5,   // blend of the top layer (0.5 == clean cancellation)
+      reveal: 0,       // 0 = pure effect; >0 lets the real video show through
+      blur: 0,         // px
+      tint: 0,         // hue degrees; 0 = no recolour
+      frozen: false,
     };
 
-    function ensureBuffers(srcW, srcH) {
-      // Size buffers from the source, capped to BUFFER_LONG_SIDE for memory.
-      const scale = Math.min(1, BUFFER_LONG_SIDE / Math.max(srcW, srcH));
-      const w = Math.max(1, Math.round(srcW * scale));
-      const h = Math.max(1, Math.round(srcH * scale));
-      const needed = settings.delay + 1;
-      if (w === bufW && h === bufH && ring.length >= needed) return;
+    const makeCanvas = (w, h) => {
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      return c;
+    };
 
+    function rebuild(w, h) {
       bufW = w; bufH = h;
       ring = [];
-      for (let i = 0; i < needed; i++) {
-        const c = document.createElement('canvas');
-        c.width = bufW; c.height = bufH;
-        ring.push(c);
-      }
+      capacity = 0;
       writeIndex = 0;
-      filled = 0;
-      canvas.width = bufW;
-      canvas.height = bufH;
+      stored = 0;
+      sinceStore = 1e9;
+      scratch = makeCanvas(w, h); sctx = scratch.getContext('2d');
+      reference = makeCanvas(w, h); refCtx = reference.getContext('2d');
+      refValid = false;
+      canvas.width = w; canvas.height = h;
+    }
+
+    function ensureCapacity(n) {
+      n = Math.min(MAX_FRAMES, n);
+      while (ring.length < n) ring.push(makeCanvas(bufW, bufH));
+      capacity = ring.length;
+    }
+
+    function bufferSizeFor(srcW, srcH) {
+      const scale = Math.min(1, BUFFER_LONG_SIDE / Math.max(srcW, srcH));
+      return [Math.max(1, Math.round(srcW * scale)), Math.max(1, Math.round(srcH * scale))];
+    }
+
+    // Build a ctx.filter string from a mode filter plus the global blur.
+    function fstr(modeFilter) {
+      let s = modeFilter && modeFilter !== 'none' ? modeFilter : '';
+      if (settings.blur > 0) s += (s ? ' ' : '') + `blur(${settings.blur}px)`;
+      return s || 'none';
+    }
+
+    function applyCanvasStyle() {
+      const mode = MODES[settings.mode] || MODES.motion;
+      let f = mode.canvas === 'none' ? '' : mode.canvas;
+      if (settings.tint > 0) {
+        f += (f ? ' ' : '') + `sepia(1) saturate(5) hue-rotate(${settings.tint}deg)`;
+      }
+      canvas.style.filter = f || 'none';
+      canvas.style.opacity = String(1 - settings.reveal);
     }
 
     function setSettings(next) {
       if (next) Object.assign(settings, next);
-      settings.delay = clamp(Math.round(settings.delay), 0, MAX_DELAY);
+      settings.delaySeconds = clamp(settings.delaySeconds, 0, MAX_DELAY_SECONDS);
       settings.strength = clamp(settings.strength, 0, 1);
       settings.reveal = clamp(settings.reveal, 0, 1);
+      settings.blur = clamp(settings.blur, 0, 40);
+      settings.tint = clamp(settings.tint, 0, 360);
 
-      const mode = MODES[settings.mode] || MODES.motion;
-      canvas.style.filter = mode.canvas;
-      canvas.style.opacity = String(1 - settings.reveal);
+      if (settings.frozen && !wasFrozen) refValid = false; // (re)capture next frame
+      wasFrozen = settings.frozen;
 
-      // Grow the ring if the delay increased (shrinking just uses fewer slots).
-      if (bufW && settings.delay + 1 > ring.length) ensureBuffers(bufW, bufH);
+      applyCanvasStyle();
+    }
+
+    // k stored-slots back from the newest stored frame
+    const storedAt = k => ring[(writeIndex - 1 - k + capacity * 1000) % capacity];
+
+    // Draw the greyscale of `src` tinted to a pure channel colour and add it to
+    // the output. Three of these (red=now, green/blue=delayed) make the RGB
+    // time-shift: static stays grey (R=G=B), motion gains colour.
+    function addChannel(src, colour) {
+      sctx.globalCompositeOperation = 'source-over';
+      sctx.globalAlpha = 1;
+      sctx.filter = fstr('grayscale(1)');
+      sctx.clearRect(0, 0, bufW, bufH);
+      sctx.drawImage(src, 0, 0, bufW, bufH);
+      sctx.filter = 'none';
+      sctx.globalCompositeOperation = 'multiply';
+      sctx.fillStyle = colour;
+      sctx.fillRect(0, 0, bufW, bufH);
+
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.drawImage(scratch, 0, 0, bufW, bufH);
     }
 
     function render(video) {
       const vw = video.videoWidth, vh = video.videoHeight;
       if (!vw || !vh) return;
-      ensureBuffers(vw, vh);
 
-      // 1. Capture the current frame into the ring.
-      ring[writeIndex].getContext('2d').drawImage(video, 0, 0, bufW, bufH);
-      writeIndex = (writeIndex + 1) % ring.length;
-      if (filled < ring.length) filled++;
+      const [w, h] = bufferSizeFor(vw, vh);
+      if (w !== bufW || h !== bufH) rebuild(w, h);
+
+      // estimate frame rate (render runs once per new video frame)
+      const t = performance.now();
+      if (lastT) {
+        const dt = t - lastT;
+        if (dt > 0 && dt < 1000) fps = fps * 0.9 + (1000 / dt) * 0.1;
+      }
+      lastT = t;
+      const efps = clamp(fps, 1, 120);
 
       const mode = MODES[settings.mode] || MODES.motion;
-      const curIdx = (writeIndex - 1 + ring.length) % ring.length;
-      const delayIdx = (writeIndex - 1 - settings.delay + ring.length * 2) % ring.length;
 
-      // 2. Base layer: the current frame.
+      // how far back we need to look, and how sparsely to store to stay bounded
+      const spacing = Math.round(settings.delaySeconds * efps); // frames
+      const maxBack = mode.kind === 'rgb' ? spacing * 2 : spacing;
+      const newStride = Math.max(1, Math.ceil(maxBack / (MAX_FRAMES - 1)));
+      if (newStride !== stride) { stride = newStride; stored = 0; writeIndex = 0; sinceStore = 1e9; }
+      ensureCapacity(Math.floor(maxBack / stride) + 2);
+
+      // capture the raw current frame into the sparse ring
+      if (++sinceStore >= stride) {
+        const sc = ring[writeIndex].getContext('2d');
+        sc.globalCompositeOperation = 'source-over';
+        sc.filter = 'none';
+        sc.drawImage(video, 0, 0, bufW, bufH);
+        writeIndex = (writeIndex + 1) % capacity;
+        if (stored < capacity) stored++;
+        sinceStore = 0;
+      }
+
+      // capture the frozen reference if just enabled
+      if (settings.frozen && !refValid) {
+        refCtx.globalCompositeOperation = 'source-over';
+        refCtx.filter = 'none';
+        refCtx.drawImage(video, 0, 0, bufW, bufH);
+        refValid = true;
+      }
+
       ctx.globalAlpha = 1;
-      ctx.filter = mode.base;
-      ctx.clearRect(0, 0, bufW, bufH);
-      ctx.drawImage(ring[curIdx], 0, 0);
+      ctx.globalCompositeOperation = 'source-over';
 
-      // 3. Top layer: the inverted, delayed frame at `strength`.
-      //    Skip until the delayed slot actually holds a frame, otherwise the
-      //    warm-up would invert against a blank (transparent) canvas.
-      if (filled > settings.delay) {
-        ctx.globalAlpha = settings.strength;
-        ctx.filter = mode.overlay;
-        ctx.drawImage(ring[delayIdx], 0, 0);
+      if (mode.kind === 'rgb') {
+        const gBack = Math.round(spacing / stride);
+        const bBack = Math.round((spacing * 2) / stride);
+        const gSrc = stored > gBack ? storedAt(gBack) : video;
+        const bSrc = stored > bBack ? storedAt(bBack) : video;
+        ctx.filter = 'none';
+        ctx.clearRect(0, 0, bufW, bufH);
+        addChannel(video, '#ff0000'); // red   = now
+        addChannel(gSrc, '#00ff00');  // green = delayed
+        addChannel(bSrc, '#0000ff');  // blue  = more delayed
+      } else {
+        // base layer: the current frame (freshest, straight from the video)
+        ctx.filter = fstr(mode.base);
+        ctx.clearRect(0, 0, bufW, bufH);
+        ctx.drawImage(video, 0, 0, bufW, bufH);
+
+        // top layer: inverted delayed (or frozen) frame at `strength`
+        let top = null;
+        if (settings.frozen) {
+          top = refValid ? reference : null;
+        } else {
+          const back = Math.round(spacing / stride);
+          if (stored > back) top = storedAt(back);
+        }
+        if (top) {
+          ctx.globalAlpha = settings.strength;
+          ctx.filter = fstr(mode.overlay);
+          ctx.drawImage(top, 0, 0, bufW, bufH);
+        }
       }
 
       ctx.globalAlpha = 1;
       ctx.filter = 'none';
+      ctx.globalCompositeOperation = 'source-over';
     }
 
     function reset() {
-      writeIndex = 0;
-      filled = 0;
+      stored = 0; writeIndex = 0; sinceStore = 1e9; refValid = false; lastT = 0;
     }
 
-    setSettings(); // apply defaults to the canvas element up front
-
-    return {
-      setSettings,
-      render,
-      reset,
-      get settings() { return settings; },
-    };
+    setSettings(); // apply defaults to the canvas element
+    return { setSettings, render, reset, get settings() { return settings; } };
   }
 
-  window.MotionEffect = { create: createMotionEffect, MODES, MAX_DELAY };
+  window.MotionEffect = { create: createMotionEffect, MODES, MAX_DELAY_SECONDS };
 })();
