@@ -1,78 +1,138 @@
-let originalCanvas = document.createElement('canvas');
-let invertedCanvas = document.createElement('canvas');
-let originalCtx = originalCanvas.getContext('2d');
-let invertedCtx = invertedCanvas.getContext('2d');
-originalCanvas.id = 'originalCanvas';
-invertedCanvas.id = 'invertedCanvas';
+// contentScript.js
+// Page integration layer. Finds the video, lays a canvas over it, drives the
+// MotionEffect engine (from motionEffect.js, injected just before this file),
+// and responds to control messages from the popup.
+//
+// It does NO work until the popup tells it to start, so leaving it injected on
+// every page is cheap.
 
-let maxFrames = 200;
-let framesBuffer = new Array(maxFrames);
-let frameDelay = 2;
-let currentFrame = 0;
-let lastPlayedTime = null;
-let opacity = 0.5; // initial value
+(function () {
+  const OVERLAY_ID = '__motionExtractionOverlay';
 
-const video = document.querySelector('video');
-if (video) {
-    document.body.appendChild(originalCanvas);
-    let videoContainer = document.querySelector("#movie_player > div.html5-video-container"); // youtube
-    videoContainer.appendChild(invertedCanvas);
+  let effect = null;
+  let overlay = null;
+  let video = null;
+  let rafId = null;
+  let running = false;
+  let lastTime = -1;
 
-    originalCanvas.width = video.videoWidth;
-    originalCanvas.height = video.videoHeight;
-    invertedCanvas.width = video.videoWidth;
-    invertedCanvas.height = video.videoHeight;
+  // Pick the largest video that actually has pixels — handles pages with
+  // several <video> elements (ads, thumbnails, the real player).
+  function pickVideo() {
+    const playable = Array.from(document.querySelectorAll('video'))
+      .filter(v => v.videoWidth > 0 && v.videoHeight > 0)
+      .sort((a, b) => b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight);
+    return playable[0] || document.querySelector('video') || null;
+  }
 
-    originalCanvas.style.display = "none";
-    invertedCanvas.style.opacity = opacity;
+  function makeOverlay() {
+    const c = document.createElement('canvas');
+    c.id = OVERLAY_ID;
+    Object.assign(c.style, {
+      position: 'fixed',
+      left: '0px',
+      top: '0px',
+      margin: '0',
+      padding: '0',
+      pointerEvents: 'none',          // never swallow clicks on the page
+      zIndex: '2147483646',
+    });
+    document.documentElement.appendChild(c);
+    return c;
+  }
 
-    invertedCtx.globalCompositeOperation = "lighter";
+  // Keep the overlay aligned with the video every frame so it follows scroll,
+  // resize and layout changes. In fullscreen the overlay must be a descendant
+  // of the fullscreen element or it won't render, so re-parent as needed.
+  function positionOverlay() {
+    if (!overlay || !video) return;
+    const r = video.getBoundingClientRect();
 
-    function draw() {
-        // skip duplicate frames
-        let currentTime = video.currentTime;
-        if (currentTime === lastPlayedTime) {
-            requestAnimationFrame(draw);
-            return;
-        }
-        lastPlayedTime = currentTime;
-        ///////////////////////////////////////
+    const fs = document.fullscreenElement;
+    const parent = fs && fs.contains(video) ? fs : document.documentElement;
+    if (overlay.parentElement !== parent) parent.appendChild(overlay);
 
-        // Draw video to original canvas
-        originalCtx.drawImage(video, 0, 0, originalCanvas.width, originalCanvas.height);
-        //originalCtx.wi
+    overlay.style.left = r.left + 'px';
+    overlay.style.top = r.top + 'px';
+    overlay.style.width = r.width + 'px';
+    overlay.style.height = r.height + 'px';
+    overlay.style.display = r.width && r.height ? 'block' : 'none';
+  }
 
-        // Get frame data from original canvas and invert colors
-        let imageData = originalCtx.getImageData(0, 0, originalCanvas.width, originalCanvas.height);
-        let data = imageData.data;
+  function loop() {
+    if (!running) return;
+    rafId = requestAnimationFrame(loop);
 
-        // Invert color of each pixel
-        for (let i = 0; i < data.length; i += 4) {
-            data[i] = 255 - data[i]; // red
-            data[i + 1] = 255 - data[i + 1]; // green
-            data[i + 2] = 255 - data[i + 2]; // blue
-        }
-        framesBuffer[currentFrame] = imageData;
-        currentFrame = (currentFrame + 1) % maxFrames;
-
-        let delayedFramee = framesBuffer[Math.abs((currentFrame + maxFrames - frameDelay) % maxFrames)];
-        if (delayedFramee) {
-            invertedCtx.putImageData(delayedFramee, 0, 0);
-        }
-
-        // Apply opacity value
-        invertedCanvas.style.opacity = opacity;
-
-        requestAnimationFrame(draw);
+    if (!video || !video.isConnected) {
+      video = pickVideo();
+      if (!video) return;
     }
+    if (video.readyState < 2) return; // no current frame yet
 
-    draw();
-}
+    positionOverlay();
 
-chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
-    if (request.action === "start") {
-        frameDelay = Number(request.frameDelay);
-        opacity = Number(request.opacity);
-        sendResponse({status: "Started"});
+    if (video.currentTime === lastTime) return; // same frame, nothing new
+    lastTime = video.currentTime;
+    effect.render(video);
+  }
+
+  function start(settings) {
+    video = pickVideo();
+    if (!video) return { ok: false, error: 'No playing <video> found on this page.' };
+
+    if (!overlay) overlay = makeOverlay();
+    if (!effect) effect = window.MotionEffect.create(overlay);
+    if (settings) effect.setSettings(settings);
+
+    running = true;
+    overlay.style.display = 'block';
+    if (rafId === null) loop();
+    return { ok: true };
+  }
+
+  function stop() {
+    running = false;
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
     }
-});
+    if (overlay) overlay.style.display = 'none';
+    if (effect) effect.reset();
+    lastTime = -1;
+    return { ok: true };
+  }
+
+  function modeList() {
+    const modes = (window.MotionEffect && window.MotionEffect.MODES) || {};
+    return Object.keys(modes).map(k => [k, modes[k].label, modes[k].kind]);
+  }
+
+  window.addEventListener('fullscreenchange', positionOverlay, true);
+
+  chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
+    switch (req && req.type) {
+      case 'mx-start':
+        sendResponse(start(req.settings));
+        break;
+      case 'mx-stop':
+        sendResponse(stop());
+        break;
+      case 'mx-update':
+        if (effect) effect.setSettings(req.settings);
+        sendResponse({ ok: running });
+        break;
+      case 'mx-status':
+        sendResponse({
+          ok: true,
+          running,
+          modes: modeList(),
+          presets: (window.MotionEffect && window.MotionEffect.PRESETS) || null,
+          defaults: (window.MotionEffect && window.MotionEffect.DEFAULTS) || null,
+        });
+        break;
+      default:
+        sendResponse({ ok: false, error: 'unknown message' });
+    }
+    return true;
+  });
+})();
