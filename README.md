@@ -46,6 +46,16 @@ flat-grey version):
   stays grey because the channels still match.
 - **RGB shift (colour)** — the same channel shift but keeping the real colours,
   for subtle chromatic-aberration motion.
+- **Vanishing act** — a self-healing background (a running average) absorbs
+  anything that holds still, so a still subject **dissolves into the background
+  and disappears**, then reappears the instant it moves. Here **Delay** sets the
+  memory (how long until still things vanish).
+- **Direction (colour)** — encodes the past frame as red and the present as
+  cyan, so the **colour of a moving edge tells you which way it moved** (leading
+  edge cyan, trailing edge red); static stays grey.
+- **Motion history** — accumulates the motion signal with slow decay into a
+  glowing **map of where motion has happened** (paths, trails) — a long exposure
+  of *activity* rather than of light.
 
 Selecting an RGB mode swaps the single Delay control for three per-channel
 sliders. **Saturation** turns the rainbow from pastel to electric.

@@ -11,6 +11,9 @@ const FALLBACK_MODES = [
   ['over', 'Glow on scene', 'glow'],
   ['rgb', 'RGB shift (grey)', 'rgb'],
   ['rgbcolor', 'RGB shift (colour)', 'rgb'],
+  ['ghost', 'Vanishing act', 'ghost'],
+  ['anaglyph', 'Direction (colour)', 'anaglyph'],
+  ['history', 'Motion history', 'history'],
 ];
 
 const DEFAULTS = {
