@@ -22,7 +22,20 @@
 //   * History is a ring of offscreen canvases; long delays store every Nth frame
 //     (a stride) so memory stays bounded to MAX_FRAMES.
 
-(function () {
+// Usage (works the same in the extension, the test bench, or a webcam PWA):
+//   const fx = MotionEffect.create(outputCanvas);
+//   fx.setSettings({ mode: 'black', delaySeconds: 0.1, saturation: 1.5 });
+//   function loop(){ requestAnimationFrame(loop); if (src.readyState>=2) fx.render(src); }
+//   loop();   // `src` can be a <video> (incl. a webcam stream), <img> or <canvas>
+//
+// Loads as a global (classic <script>) or via require() (CommonJS/bundlers).
+
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.MotionEffect = api;
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
   const MAX_FRAMES = 120;        // hard cap on buffered frames (memory bound)
   const BUFFER_LONG_SIDE = 854;  // cap buffer resolution (long side, px)
   const MAX_DELAY_SECONDS = 6;
@@ -152,7 +165,9 @@
     }
 
     function render(video) {
-      const vw = video.videoWidth, vh = video.videoHeight;
+      // `video` is anything drawImage accepts: <video> (incl. webcam), <img>, <canvas>
+      const vw = video.videoWidth || video.naturalWidth || video.width || 0;
+      const vh = video.videoHeight || video.naturalHeight || video.height || 0;
       if (!vw || !vh) return;
 
       const [w, h] = bufferSizeFor(vw, vh);
@@ -294,5 +309,5 @@
     return { setSettings, render, reset, get settings() { return settings; } };
   }
 
-  window.MotionEffect = { create: createMotionEffect, MODES, MAX_DELAY_SECONDS };
-})();
+  return { create: createMotionEffect, MODES, MAX_DELAY_SECONDS };
+});

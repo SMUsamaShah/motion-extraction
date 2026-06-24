@@ -69,6 +69,35 @@ sliders. **Saturation** turns the rainbow from pastel to electric.
 | `popup.html` / `popup.js` | The control panel. |
 | `manifest.json` | Extension manifest (MV3). |
 | `index.html` / `script.js` | A standalone test bench — try modes/settings on a local video with no extension reload loop. |
+| `webcam.html` / `webcam.js` | A minimal camera demo (controls pinned to the bottom) — a starting point for a standalone / PWA build. |
+
+## Reusing the engine in your own app
+
+`motionEffect.js` is self-contained and knows nothing about the extension — it's
+the file to drop into other projects (webcam app, PWA, etc.). It loads as a
+global via `<script>` or through `require()`/bundlers.
+
+```js
+const fx = MotionEffect.create(outputCanvas);
+fx.setSettings({ mode: 'black', delaySeconds: 0.1, saturation: 1.5 });
+
+function loop() {
+  requestAnimationFrame(loop);
+  if (source.readyState >= 2) fx.render(source); // call once per frame
+}
+loop();
+```
+
+- `MotionEffect.create(canvas)` → an effect bound to that output canvas.
+- `fx.render(source)` — `source` is anything `drawImage` accepts: a `<video>`
+  (including a `getUserMedia` webcam stream), `<img>` or `<canvas>`.
+- `fx.setSettings({...})` — any of `mode`, `delaySeconds`, `delayR/G/B`,
+  `strength`, `reveal`, `blur`, `tint`, `saturation`, `frozen`.
+- `fx.reset()` — clear the frame history.
+- `MotionEffect.MODES` / `MotionEffect.MAX_DELAY_SECONDS` — for building UI.
+
+The canvas's pixel size is managed by the engine; size it on screen with CSS.
+`webcam.js` is a ~60-line end-to-end example.
 
 ## Adding new looks
 
