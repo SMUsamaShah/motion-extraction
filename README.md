@@ -18,27 +18,37 @@ grey.
 | --- | --- |
 | **Mode** | Which look (see below). |
 | **Delay** | Time gap between the two copies, in seconds. ~1 frame (≈0.02–0.04 s) shows only fast motion; 1 s shows slower motion; 5 s+ reveals very slow drift (light, shadows). |
-| **Strength** | Blend of the top layer. `0.50` gives clean cancellation (flat grey); off `0.50` tints the static parts. |
-| **Freeze duplicate** | Compare every frame to one *frozen* reference instead of a rolling delay, so change **accumulates over time** (Posy's moon-setting / brightening-light shots). |
-| **Reveal original** | Fades the effect back over the real video, so you keep the scene as context. |
-| **Blur** | Blurs the input so fine detail/noise cancels and only **larger motion** shows. |
-| **Tint** | Recolours the (grey) motion to a chosen hue. `off` = no recolour. |
+| **Red / Green / Blue delay** | (RGB modes only) per-channel delays — the bigger the spread, the wider the rainbow. |
+| **Strength** | (Motion mode) blend of the inverted layer. `0.50` gives clean cancellation; off `0.50` tints the static parts. |
+| **Freeze duplicate** | Compare every frame to one *frozen* reference instead of a rolling delay, so change **accumulates over time** (the moon-setting / footprints shots). Works with the grey, black and glow modes. |
+| **Reveal original** | Fades the effect back over the real video. |
+| **Saturation** | `0%` = greyscale (mono look), `100%` = as-is, higher = vivid (punchy difference, electric rainbows). |
+| **Blur** | Blurs the input so fine detail cancels and only **larger motion** shows (also the bloom size for *Glow on scene*). |
+| **Tint** | Recolours the motion to a chosen hue. `off` = no recolour. |
 
 ## Modes
 
-- **Motion (colour / mono / boosted / glow)** — the invert-and-delay technique;
-  static averages to flat **grey**, motion appears as deviations from it.
-  `boosted` cranks contrast/saturation to surface tiny motion; `glow` adds bloom.
-- **Motion on black** — uses a *Difference* blend (`|current − delayed|`) instead
-  of invert-and-delay, so static is **black** and motion appears bright from it.
-  Punchier than the grey look.
-- **Moving on black** — uses the motion difference as a matte to reveal the
-  actual moving subject (in its real colours) over black, rather than just the
-  changed edges.
-- **RGB time-shift** — delays the red, green and blue channels by independent
-  amounts (Posy's `0 / 3 / 6` trick) so moving things leave **rainbow trails**.
-  Static stays grey because the three channels still match. Selecting this mode
-  swaps the single Delay control for three per-channel delay sliders.
+Reviewing Posy's video, almost every shot is one of these (he rarely shows the
+flat-grey version):
+
+- **Motion (grey)** — the classic invert-and-delay; static averages to grey.
+  Drop **Saturation** to 0% for the black-and-white "mono" look.
+- **Motion on black** — *Difference* blend (`|current − delayed|`): static is
+  **black**, motion bright and in its real colour (rain ripples, stones, the
+  moon). Raise **Saturation** to make it pop.
+- **Moving on black** — uses the motion as a matte to reveal the moving
+  **subject in real colour** over black (the wind-blown reeds).
+- **Glow on scene** — adds the motion as a white **glow on top of the real,
+  full-colour footage** (grass tips, drifting clouds, insects). Use **Blur** for
+  the bloom.
+- **RGB shift (grey)** — delays R/G/B by independent amounts over a greyscale
+  scene → **rainbow motion** (the turbine blades, iridescent clouds). Static
+  stays grey because the channels still match.
+- **RGB shift (colour)** — the same channel shift but keeping the real colours,
+  for subtle chromatic-aberration motion.
+
+Selecting an RGB mode swaps the single Delay control for three per-channel
+sliders. **Saturation** turns the rainbow from pastel to electric.
 
 ## Install (unpacked)
 
@@ -76,9 +86,11 @@ mono: { label: 'Motion (mono)', kind: 'overlay',
   the cancellation breaks.
 - `canvas` — filter applied to the finished result (post-processing).
 
-Add a row and it appears automatically in both the popup and the test bench.
-The `RGB time-shift` mode (`kind: 'rgb'`) uses a custom render path instead of
-these filters — copy it as a starting point for other multi-frame composites.
+Add a row and it appears automatically in both the popup and the test bench
+(the popup reads the mode list, with each mode's `kind`, from the content
+script). The other `kind`s — `difference`, `mask`, `glow`, `rgb` — use custom
+render paths in `render()`; copy whichever is closest as a starting point for a
+new multi-frame composite.
 
 ## Notes / limitations
 

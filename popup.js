@@ -5,13 +5,12 @@
 // Fallback mode list (used if the content script isn't reachable yet). The
 // content script reports the authoritative list via the mx-status response.
 const FALLBACK_MODES = [
-  ['motion', 'Motion (colour)', 'overlay'],
-  ['mono', 'Motion (mono)', 'overlay'],
-  ['boosted', 'Motion (boosted)', 'overlay'],
-  ['glow', 'Motion (glow)', 'overlay'],
+  ['motion', 'Motion (grey)', 'overlay'],
   ['black', 'Motion on black', 'difference'],
   ['isolate', 'Moving on black', 'mask'],
-  ['rgb', 'RGB time-shift', 'rgb'],
+  ['over', 'Glow on scene', 'glow'],
+  ['rgb', 'RGB shift (grey)', 'rgb'],
+  ['rgbcolor', 'RGB shift (colour)', 'rgb'],
 ];
 
 const DEFAULTS = {
@@ -24,6 +23,7 @@ const DEFAULTS = {
   reveal: 0,
   blur: 0,
   tint: 0,
+  saturation: 1,
   frozen: false,
 };
 
@@ -36,6 +36,7 @@ const FIELDS = [
   { id: 'delayB', key: 'delayB', kind: 'number', fmt: v => `${(+v).toFixed(2)} s` },
   { id: 'strength', key: 'strength', kind: 'number', fmt: v => (+v).toFixed(2) },
   { id: 'reveal', key: 'reveal', kind: 'number', fmt: v => (+v).toFixed(2) },
+  { id: 'sat', key: 'saturation', kind: 'number', fmt: v => `${Math.round(v * 100)}%` },
   { id: 'blur', key: 'blur', kind: 'number', fmt: v => `${v} px` },
   { id: 'tint', key: 'tint', kind: 'number', fmt: v => (+v === 0 ? 'off' : `${v}°`) },
   { id: 'freeze', key: 'frozen', kind: 'bool', event: 'change' },
@@ -73,9 +74,9 @@ function reflect() {
   // invert-overlay modes add strength + freeze; difference/mask just use delay.
   const kind = modeKinds[state.mode] || 'overlay';
   const setVis = (sel, on) => document.querySelectorAll(sel).forEach(e => { e.style.display = on ? '' : 'none'; });
-  setVis('.delay-single', kind !== 'rgb');
-  setVis('.rgb-only', kind === 'rgb');
-  setVis('.overlay-only', kind === 'overlay');
+  setVis('.no-rgb', kind !== 'rgb');       // single delay + freeze
+  setVis('.rgb-only', kind === 'rgb');     // per-channel delays
+  setVis('.overlay-only', kind === 'overlay'); // strength (invert-overlay only)
   toggle.textContent = running ? 'Stop' : 'Start';
   toggle.classList.toggle('on', running);
 }
@@ -90,6 +91,7 @@ const settings = () => ({
   reveal: +state.reveal,
   blur: +state.blur,
   tint: +state.tint,
+  saturation: +state.saturation,
   frozen: !!state.frozen,
 });
 

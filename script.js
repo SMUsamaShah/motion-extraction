@@ -7,7 +7,7 @@ const video = document.getElementById('src');
 const out = document.getElementById('out');
 const effect = MotionEffect.create(out);
 
-const settings = { mode: 'motion', delaySeconds: 0.1, delayR: 0, delayG: 0.1, delayB: 0.2, strength: 0.5, reveal: 0, blur: 0, tint: 0, frozen: false };
+const settings = { mode: 'motion', delaySeconds: 0.1, delayR: 0, delayG: 0.1, delayB: 0.2, strength: 0.5, reveal: 0, blur: 0, tint: 0, saturation: 1, frozen: false };
 
 // Populate the mode dropdown straight from the engine's MODES table.
 const modeSel = document.getElementById('mode');
@@ -27,6 +27,7 @@ function applySettings() {
   settings.strength = +document.getElementById('strength').value;
   settings.blur = +document.getElementById('blur').value;
   settings.tint = +document.getElementById('tint').value;
+  settings.saturation = +document.getElementById('sat').value;
   settings.frozen = document.getElementById('freeze').checked;
 
   document.getElementById('delayVal').textContent = settings.delaySeconds.toFixed(2) + ' s';
@@ -36,10 +37,12 @@ function applySettings() {
   document.getElementById('strengthVal').textContent = settings.strength.toFixed(2);
   document.getElementById('blurVal').textContent = settings.blur + ' px';
   document.getElementById('tintVal').textContent = settings.tint === 0 ? 'off' : settings.tint + '°';
-  document.getElementById('rgbControls').style.display = settings.mode === 'rgb' ? '' : 'none';
+  document.getElementById('satVal').textContent = Math.round(settings.saturation * 100) + '%';
+  const kind = (MotionEffect.MODES[settings.mode] || {}).kind;
+  document.getElementById('rgbControls').style.display = kind === 'rgb' ? '' : 'none';
   effect.setSettings(settings);
 }
-for (const id of ['mode', 'delay', 'delayR', 'delayG', 'delayB', 'strength', 'blur', 'tint']) {
+for (const id of ['mode', 'delay', 'delayR', 'delayG', 'delayB', 'strength', 'blur', 'tint', 'sat']) {
   document.getElementById(id).addEventListener('input', applySettings);
 }
 document.getElementById('freeze').addEventListener('change', applySettings);
