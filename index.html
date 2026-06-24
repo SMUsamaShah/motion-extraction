@@ -4,45 +4,60 @@
   <meta charset="utf-8">
   <title>Motion Extraction — test bench</title>
   <style>
-    body { font: 14px system-ui, sans-serif; margin: 16px; background: #111; color: #eee; }
-    h1 { font-size: 18px; }
-    .controls { margin: 12px 0; }
-    .controls label { margin-right: 16px; white-space: nowrap; }
-    #stage { position: relative; display: inline-block; max-width: 95vw; }
-    #stage video, #stage canvas { display: block; max-width: 95vw; }
-    #out { position: absolute; left: 0; top: 0; }
+    * { box-sizing: border-box; }
+    body { font: 13px system-ui, sans-serif; margin: 0; background: #111; color: #eee; display: flex; height: 100vh; }
+    #panel { width: 240px; flex: none; padding: 12px; overflow-y: auto; background: #181818; border-right: 1px solid #000; }
+    #stage { flex: 1; position: relative; display: grid; place-items: center; min-width: 0; }
+    #stage video, #stage canvas { max-width: 100%; max-height: 100vh; }
+    #out { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+    h1 { font-size: 14px; margin: 0 0 10px; }
+    .row { margin: 9px 0; }
+    label { display: block; margin-bottom: 3px; }
+    .val { float: right; color: #999; }
+    input[type=range], select, input[type=text] { width: 100%; box-sizing: border-box; }
+    .check { display: flex; gap: 6px; align-items: center; }
+    .check input { width: auto; } .check label { display: inline; margin: 0; }
+    button { padding: 6px 8px; cursor: pointer; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 5px; }
+    .presetbar { display: flex; gap: 6px; } .presetbar button { flex: 1; }
+    hr { border: none; border-top: 1px solid #333; margin: 11px 0; }
+    .sub { font-size: 11px; color: #888; margin: 4px 0; }
     a { color: #6cf; }
   </style>
 </head>
 <body>
-  <h1>Motion Extraction — test bench</h1>
-  <p>A no-extension sandbox for trying modes/settings. Load a local file (always
-     works) or a CORS-enabled video URL.</p>
+  <div id="panel">
+    <h1>Motion Extraction</h1>
 
-  <div class="controls">
-    <input type="file" id="file" accept="video/*">
-    <input type="text" id="url" placeholder="…or a CORS-enabled video URL" size="36">
-    <button id="load">Load</button>
-  </div>
+    <div class="row"><input type="file" id="file" accept="video/*"></div>
+    <div class="row"><input type="text" id="url" placeholder="…or CORS video URL"></div>
+    <div class="row presetbar"><button id="load">Load</button><button id="showSource">Source</button></div>
 
-  <div class="controls">
-    <label>Mode <select id="mode"></select></label>
-    <label>Delay <input type="range" id="delay" min="0" max="5" step="0.01" value="0.1"> <span id="delayVal">0.10 s</span></label>
-    <label>Strength <input type="range" id="strength" min="0" max="1" step="0.01" value="0.5"> <span id="strengthVal">0.50</span></label>
-    <label><input type="checkbox" id="freeze"> freeze duplicate</label>
-  </div>
+    <hr>
+    <div class="row"><label>Preset</label><select id="preset"></select></div>
+    <div class="row presetbar"><button id="save">Save as…</button><button id="del">Delete</button></div>
+    <div class="row"><label>Method</label><select id="mode"></select></div>
 
-  <div class="controls" id="rgbControls" style="display:none">
-    <label>Red <input type="range" id="delayR" min="0" max="5" step="0.01" value="0"> <span id="delayRVal">0.00 s</span></label>
-    <label>Green <input type="range" id="delayG" min="0" max="5" step="0.01" value="0.1"> <span id="delayGVal">0.10 s</span></label>
-    <label>Blue <input type="range" id="delayB" min="0" max="5" step="0.01" value="0.2"> <span id="delayBVal">0.20 s</span></label>
-  </div>
+    <div class="row" data-for="motion black isolate over anaglyph history">
+      <label>Delay <span class="val" id="delayVal"></span></label><input type="range" id="delay" min="0" max="5" step="0.01"></div>
+    <div class="row" data-for="rgb"><label>Red delay <span class="val" id="delayRVal"></span></label><input type="range" id="delayR" min="0" max="5" step="0.01"></div>
+    <div class="row" data-for="rgb"><label>Green delay <span class="val" id="delayGVal"></span></label><input type="range" id="delayG" min="0" max="5" step="0.01"></div>
+    <div class="row" data-for="rgb"><label>Blue delay <span class="val" id="delayBVal"></span></label><input type="range" id="delayB" min="0" max="5" step="0.01"></div>
+    <div class="row check" data-for="rgb"><input type="checkbox" id="grayscale"><label for="grayscale">Greyscale</label></div>
+    <div class="row" data-for="motion"><label>Strength <span class="val" id="strengthVal"></span></label><input type="range" id="strength" min="0" max="1" step="0.01"></div>
+    <div class="row" data-for="isolate over ghost"><label>Gain <span class="val" id="gainVal"></span></label><input type="range" id="gain" min="0.2" max="6" step="0.1"></div>
+    <div class="row" data-for="ghost"><label>Memory <span class="val" id="memorySecondsVal"></span></label><input type="range" id="memorySeconds" min="0.1" max="5" step="0.1"></div>
+    <div class="row" data-for="history"><label>Trail decay <span class="val" id="decayVal"></span></label><input type="range" id="decay" min="0.002" max="0.2" step="0.002"></div>
+    <div class="row check" data-for="motion black isolate over anaglyph history"><input type="checkbox" id="frozen"><label for="frozen">Freeze reference</label></div>
 
-  <div class="controls">
-    <label>Saturation <input type="range" id="sat" min="0" max="3" step="0.05" value="1"> <span id="satVal">100%</span></label>
-    <label>Blur <input type="range" id="blur" min="0" max="20" step="1" value="0"> <span id="blurVal">0 px</span></label>
-    <label>Tint <input type="range" id="tint" min="0" max="360" step="1" value="0"> <span id="tintVal">off</span></label>
-    <label><input type="checkbox" id="showSource"> show source</label>
+    <hr>
+    <p class="sub">Look (all methods)</p>
+    <div class="row"><label>Saturation <span class="val" id="saturationVal"></span></label><input type="range" id="saturation" min="0" max="3" step="0.05"></div>
+    <div class="row"><label>Brightness <span class="val" id="brightnessVal"></span></label><input type="range" id="brightness" min="0.2" max="3" step="0.05"></div>
+    <div class="row"><label>Contrast <span class="val" id="contrastVal"></span></label><input type="range" id="contrast" min="0.2" max="3" step="0.05"></div>
+    <div class="row"><label>Blur <span class="val" id="blurVal"></span></label><input type="range" id="blur" min="0" max="20" step="1"></div>
+    <div class="row"><label>Tint hue <span class="val" id="tintHueVal"></span></label><input type="range" id="tintHue" min="0" max="360" step="1"></div>
+    <div class="row"><label>Tint amount <span class="val" id="tintAmountVal"></span></label><input type="range" id="tintAmount" min="0" max="1" step="0.05"></div>
+    <div class="row"><label>Reveal original <span class="val" id="revealVal"></span></label><input type="range" id="reveal" min="0" max="1" step="0.01"></div>
   </div>
 
   <div id="stage">

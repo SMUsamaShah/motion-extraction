@@ -1,66 +1,56 @@
 // webcam.js
 // Minimal camera demo for the shared MotionEffect core — a starting point for a
-// standalone / PWA build. Note how little glue there is: get a camera stream
-// into a <video>, then call fx.render(video) every frame. The core is unchanged
-// from the one the extension uses.
+// standalone / PWA build. Presets come from the core; the bottom bar exposes a
+// handful of controls for live tweaking (the rest come from the chosen preset).
 
 const $ = id => document.getElementById(id);
 const cam = $('cam');
 const out = $('out');
 const fx = MotionEffect.create(out);
 
-let facing = 'environment'; // 'environment' = back camera, 'user' = selfie
+let facing = 'environment';
+let state = { ...MotionEffect.DEFAULTS };
 
-const settings = {
-  mode: 'black', delaySeconds: 0.1,
-  delayR: 0, delayG: 0.1, delayB: 0.2,
-  strength: 0.5, reveal: 0, blur: 0, tint: 0, saturation: 1.4, frozen: false,
-};
+// preset + method dropdowns from the core
+MotionEffect.PRESETS.forEach((p, i) => $('preset').add(new Option(p.name, i)));
+for (const key in MotionEffect.MODES) $('mode').add(new Option(MotionEffect.MODES[key].label, key));
 
-// Populate the mode dropdown from the core's MODES table.
-for (const [key, mode] of Object.entries(MotionEffect.MODES)) {
-  const o = document.createElement('option');
-  o.value = key; o.textContent = mode.label;
-  $('mode').appendChild(o);
-}
-$('mode').value = settings.mode;
+// bottom-bar controls -> setting keys
+const FIELDS = [
+  { id: 'delay', key: 'delaySeconds', fmt: v => (+v).toFixed(2) + 's' },
+  { id: 'delayR', key: 'delayR' }, { id: 'delayG', key: 'delayG' }, { id: 'delayB', key: 'delayB' },
+  { id: 'sat', key: 'saturation', fmt: v => Math.round(v * 100) + '%' },
+  { id: 'blur', key: 'blur', fmt: v => v + 'px' },
+];
 
-function sync() {
-  settings.mode = $('mode').value;
-  settings.delaySeconds = +$('delay').value;
-  settings.delayR = +$('delayR').value;
-  settings.delayG = +$('delayG').value;
-  settings.delayB = +$('delayB').value;
-  settings.saturation = +$('sat').value;
-  settings.blur = +$('blur').value;
-
-  $('delayVal').textContent = settings.delaySeconds.toFixed(2) + 's';
-  $('satVal').textContent = Math.round(settings.saturation * 100) + '%';
-  $('blurVal').textContent = settings.blur + 'px';
-
-  const kind = (MotionEffect.MODES[settings.mode] || {}).kind;
-  document.body.classList.toggle('is-rgb', kind === 'rgb');
-  fx.setSettings(settings);
+function reflect() {
+  $('mode').value = state.mode;
+  for (const f of FIELDS) {
+    $(f.id).value = state[f.key];
+    if (f.fmt) $(f.id + 'Val').textContent = f.fmt(state[f.key]);
+  }
+  document.body.classList.toggle('is-rgb', state.mode === 'rgb');
+  fx.setSettings(state);
 }
 
-// reflect initial values onto the controls, then wire change handlers
-$('delay').value = settings.delaySeconds;
-$('delayR').value = settings.delayR;
-$('delayG').value = settings.delayG;
-$('delayB').value = settings.delayB;
-$('sat').value = settings.saturation;
-$('blur').value = settings.blur;
-for (const id of ['mode', 'delay', 'delayR', 'delayG', 'delayB', 'sat', 'blur']) {
-  $(id).addEventListener('input', sync);
+$('preset').addEventListener('change', () => {
+  const p = MotionEffect.PRESETS[+$('preset').value];
+  if (p) { state = Object.assign({ ...MotionEffect.DEFAULTS }, p.settings); reflect(); }
+});
+$('mode').addEventListener('change', () => { state.mode = $('mode').value; reflect(); });
+for (const f of FIELDS) {
+  $(f.id).addEventListener('input', () => {
+    state[f.key] = +$(f.id).value;
+    if (f.fmt) $(f.id + 'Val').textContent = f.fmt(state[f.key]);
+    fx.setSettings(state);
+  });
 }
 
 async function startCamera() {
   if (cam.srcObject) cam.srcObject.getTracks().forEach(t => t.stop());
-  cam.srcObject = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: facing }, audio: false,
-  });
+  cam.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false });
   await cam.play();
-  out.classList.toggle('mirror', facing === 'user'); // mirror the selfie view
+  out.classList.toggle('mirror', facing === 'user');
 }
 
 $('go').addEventListener('click', async () => {
@@ -68,11 +58,12 @@ $('go').addEventListener('click', async () => {
     await startCamera();
     $('start').hidden = true;
     $('bar').hidden = false;
-    sync();
+    // start on a nice preset
+    state = Object.assign({ ...MotionEffect.DEFAULTS }, MotionEffect.PRESETS[2].settings); // Motion on black
+    $('preset').value = '2';
+    reflect();
     loop();
-  } catch (e) {
-    alert('Could not start camera: ' + e.message);
-  }
+  } catch (e) { alert('Could not start camera: ' + e.message); }
 });
 
 $('flip').addEventListener('click', async () => {

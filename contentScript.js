@@ -122,7 +122,13 @@
         sendResponse({ ok: running });
         break;
       case 'mx-status':
-        sendResponse({ ok: true, running, modes: modeList() });
+        sendResponse({
+          ok: true,
+          running,
+          modes: modeList(),
+          presets: (window.MotionEffect && window.MotionEffect.PRESETS) || null,
+          defaults: (window.MotionEffect && window.MotionEffect.DEFAULTS) || null,
+        });
         break;
       default:
         sendResponse({ ok: false, error: 'unknown message' });

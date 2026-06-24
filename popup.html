@@ -3,19 +3,24 @@
 <head>
   <meta charset="utf-8">
   <style>
-    body { font: 13px system-ui, -apple-system, sans-serif; width: 250px; margin: 0; padding: 12px; }
+    body { font: 13px system-ui, -apple-system, sans-serif; width: 252px; margin: 0; padding: 12px;
+           max-height: 560px; overflow-y: auto; }
     h1 { font-size: 14px; margin: 0 0 10px; }
-    .row { margin: 11px 0; }
-    label { display: block; margin-bottom: 4px; color: #333; }
+    .row { margin: 9px 0; }
+    label { display: block; margin-bottom: 3px; color: #333; }
     .val { float: right; color: #888; font-variant-numeric: tabular-nums; }
     input[type=range], select { width: 100%; box-sizing: border-box; }
     .check { display: flex; align-items: center; gap: 6px; }
     .check input { width: auto; }
     .check label { display: inline; margin: 0; }
-    button { width: 100%; padding: 8px; font-size: 14px; cursor: pointer; border-radius: 4px; border: 1px solid #bbb; }
-    button.on { background: #c0392b; border-color: #c0392b; color: #fff; }
-    #hint { min-height: 16px; margin-top: 10px; color: #c0392b; font-size: 12px; }
-    hr { border: none; border-top: 1px solid #eee; margin: 12px 0; }
+    button { padding: 7px 8px; font-size: 13px; cursor: pointer; border-radius: 5px; border: 1px solid #bbb; background:#f6f6f6; }
+    #toggle { width: 100%; font-size: 14px; padding: 8px; margin-bottom: 10px; }
+    #toggle.on { background: #c0392b; border-color: #c0392b; color: #fff; }
+    .presetbar { display: flex; gap: 6px; }
+    .presetbar button { flex: 1; }
+    #hint { min-height: 15px; margin-top: 8px; color: #c0392b; font-size: 12px; }
+    hr { border: none; border-top: 1px solid #eee; margin: 11px 0; }
+    .sub { font-size: 11px; color: #999; margin: 4px 0 0; }
   </style>
 </head>
 <body>
@@ -23,60 +28,92 @@
   <button id="toggle">Start</button>
 
   <div class="row">
-    <label>Mode</label>
-    <select id="mode"></select>
+    <label>Preset</label>
+    <select id="preset"></select>
   </div>
-
-  <div class="row no-rgb">
-    <label>Delay <span class="val" id="delayVal"></span></label>
-    <input type="range" id="delay" min="0" max="5" step="0.01">
-  </div>
-
-  <div class="rgb-only" style="display:none">
-    <div class="row">
-      <label>Red delay <span class="val" id="delayRVal"></span></label>
-      <input type="range" id="delayR" min="0" max="5" step="0.01">
-    </div>
-    <div class="row">
-      <label>Green delay <span class="val" id="delayGVal"></span></label>
-      <input type="range" id="delayG" min="0" max="5" step="0.01">
-    </div>
-    <div class="row">
-      <label>Blue delay <span class="val" id="delayBVal"></span></label>
-      <input type="range" id="delayB" min="0" max="5" step="0.01">
-    </div>
-  </div>
-
-  <div class="row overlay-only">
-    <label>Strength <span class="val" id="strengthVal"></span></label>
-    <input type="range" id="strength" min="0" max="1" step="0.01">
-  </div>
-
-  <div class="row check no-rgb">
-    <input type="checkbox" id="freeze">
-    <label for="freeze">Freeze duplicate (change over time)</label>
+  <div class="row presetbar">
+    <button id="save">Save as…</button>
+    <button id="del">Delete</button>
   </div>
 
   <hr>
 
   <div class="row">
-    <label>Reveal original <span class="val" id="revealVal"></span></label>
-    <input type="range" id="reveal" min="0" max="1" step="0.01">
+    <label>Method</label>
+    <select id="mode"></select>
   </div>
+
+  <div class="row" data-for="motion black isolate over anaglyph history">
+    <label>Delay <span class="val" id="delayVal"></span></label>
+    <input type="range" id="delay" min="0" max="5" step="0.01">
+  </div>
+  <div class="row" data-for="rgb">
+    <label>Red delay <span class="val" id="delayRVal"></span></label>
+    <input type="range" id="delayR" min="0" max="5" step="0.01">
+  </div>
+  <div class="row" data-for="rgb">
+    <label>Green delay <span class="val" id="delayGVal"></span></label>
+    <input type="range" id="delayG" min="0" max="5" step="0.01">
+  </div>
+  <div class="row" data-for="rgb">
+    <label>Blue delay <span class="val" id="delayBVal"></span></label>
+    <input type="range" id="delayB" min="0" max="5" step="0.01">
+  </div>
+  <div class="row check" data-for="rgb">
+    <input type="checkbox" id="grayscale">
+    <label for="grayscale">Greyscale (rainbow on grey)</label>
+  </div>
+  <div class="row" data-for="motion">
+    <label>Strength <span class="val" id="strengthVal"></span></label>
+    <input type="range" id="strength" min="0" max="1" step="0.01">
+  </div>
+  <div class="row" data-for="isolate over ghost">
+    <label>Gain <span class="val" id="gainVal"></span></label>
+    <input type="range" id="gain" min="0.2" max="6" step="0.1">
+  </div>
+  <div class="row" data-for="ghost">
+    <label>Memory <span class="val" id="memorySecondsVal"></span></label>
+    <input type="range" id="memorySeconds" min="0.1" max="5" step="0.1">
+  </div>
+  <div class="row" data-for="history">
+    <label>Trail decay <span class="val" id="decayVal"></span></label>
+    <input type="range" id="decay" min="0.002" max="0.2" step="0.002">
+  </div>
+  <div class="row check" data-for="motion black isolate over anaglyph history">
+    <input type="checkbox" id="frozen">
+    <label for="frozen">Freeze reference (change over time)</label>
+  </div>
+
+  <hr>
+  <p class="sub">Look (applies to every method)</p>
 
   <div class="row">
-    <label>Saturation <span class="val" id="satVal"></span></label>
-    <input type="range" id="sat" min="0" max="3" step="0.05">
+    <label>Saturation <span class="val" id="saturationVal"></span></label>
+    <input type="range" id="saturation" min="0" max="3" step="0.05">
   </div>
-
+  <div class="row">
+    <label>Brightness <span class="val" id="brightnessVal"></span></label>
+    <input type="range" id="brightness" min="0.2" max="3" step="0.05">
+  </div>
+  <div class="row">
+    <label>Contrast <span class="val" id="contrastVal"></span></label>
+    <input type="range" id="contrast" min="0.2" max="3" step="0.05">
+  </div>
   <div class="row">
     <label>Blur <span class="val" id="blurVal"></span></label>
     <input type="range" id="blur" min="0" max="20" step="1">
   </div>
-
   <div class="row">
-    <label>Tint <span class="val" id="tintVal"></span></label>
-    <input type="range" id="tint" min="0" max="360" step="1">
+    <label>Tint hue <span class="val" id="tintHueVal"></span></label>
+    <input type="range" id="tintHue" min="0" max="360" step="1">
+  </div>
+  <div class="row">
+    <label>Tint amount <span class="val" id="tintAmountVal"></span></label>
+    <input type="range" id="tintAmount" min="0" max="1" step="0.05">
+  </div>
+  <div class="row">
+    <label>Reveal original <span class="val" id="revealVal"></span></label>
+    <input type="range" id="reveal" min="0" max="1" step="0.01">
   </div>
 
   <div id="hint"></div>

@@ -12,53 +12,41 @@ between the two moments, a colour and its inverse blend to flat grey and cancel
 out. Only the parts that changed (the motion) survive, standing out against the
 grey.
 
-## Controls
+## Presets & controls
 
-| Control | What it does |
+Pick a **Preset** for an instant look, then tweak any control to taste and
+**Save as…** your own (saved presets persist; built-ins can't be deleted).
+Each preset is just a **Method** plus parameter values — nothing is hard-coded,
+so a preset is fully reproducible from the controls.
+
+**Methods** (the underlying pipeline):
+
+| Method | What it does |
 | --- | --- |
-| **Mode** | Which look (see below). |
-| **Delay** | Time gap between the two copies, in seconds. ~1 frame (≈0.02–0.04 s) shows only fast motion; 1 s shows slower motion; 5 s+ reveals very slow drift (light, shadows). |
-| **Red / Green / Blue delay** | (RGB modes only) per-channel delays — the bigger the spread, the wider the rainbow. |
-| **Strength** | (Motion mode) blend of the inverted layer. `0.50` gives clean cancellation; off `0.50` tints the static parts. |
-| **Freeze duplicate** | Compare every frame to one *frozen* reference instead of a rolling delay, so change **accumulates over time** (the moon-setting / footprints shots). Works with the grey, black and glow modes. |
-| **Reveal original** | Fades the effect back over the real video. |
-| **Saturation** | `0%` = greyscale (mono look), `100%` = as-is, higher = vivid (punchy difference, electric rainbows). |
-| **Blur** | Blurs the input so fine detail cancels and only **larger motion** shows (also the bloom size for *Glow on scene*). |
-| **Tint** | Recolours the motion to a chosen hue. `off` = no recolour. |
+| **Blend (invert + delay)** | The classic invert-and-delay; static averages to grey. |
+| **Difference** | `|current − delayed|`: static **black**, motion bright in real colour. |
+| **Matte on black** | Reveals the moving **subject in real colour** over black. |
+| **Glow on scene** | Adds the motion as a **glow over the real, full-colour footage**. |
+| **RGB time-shift** | Delays R/G/B independently → **rainbow motion** (turbines, clouds). |
+| **Vanishing (auto bg)** | A self-learning background; hold still and you **dissolve and vanish**. |
+| **Direction** | Past→red, present→cyan, so colour shows **which way things moved**. |
+| **Motion history** | Accumulates motion into a glowing **map of where motion happened**. |
 
-## Modes
+**Controls** (only the ones a method uses are shown):
 
-Reviewing Posy's video, almost every shot is one of these (he rarely shows the
-flat-grey version):
-
-- **Motion (grey)** — the classic invert-and-delay; static averages to grey.
-  Drop **Saturation** to 0% for the black-and-white "mono" look.
-- **Motion on black** — *Difference* blend (`|current − delayed|`): static is
-  **black**, motion bright and in its real colour (rain ripples, stones, the
-  moon). Raise **Saturation** to make it pop.
-- **Moving on black** — uses the motion as a matte to reveal the moving
-  **subject in real colour** over black (the wind-blown reeds).
-- **Glow on scene** — adds the motion as a white **glow on top of the real,
-  full-colour footage** (grass tips, drifting clouds, insects). Use **Blur** for
-  the bloom.
-- **RGB shift (grey)** — delays R/G/B by independent amounts over a greyscale
-  scene → **rainbow motion** (the turbine blades, iridescent clouds). Static
-  stays grey because the channels still match.
-- **RGB shift (colour)** — the same channel shift but keeping the real colours,
-  for subtle chromatic-aberration motion.
-- **Vanishing act** — a self-healing background (a running average) absorbs
-  anything that holds still, so a still subject **dissolves into the background
-  and disappears**, then reappears the instant it moves. Here **Delay** sets the
-  memory (how long until still things vanish).
-- **Direction (colour)** — encodes the past frame as red and the present as
-  cyan, so the **colour of a moving edge tells you which way it moved** (leading
-  edge cyan, trailing edge red); static stays grey.
-- **Motion history** — accumulates the motion signal with slow decay into a
-  glowing **map of where motion has happened** (paths, trails) — a long exposure
-  of *activity* rather than of light.
-
-Selecting an RGB mode swaps the single Delay control for three per-channel
-sliders. **Saturation** turns the rainbow from pastel to electric.
+| Control | Applies to | What it does |
+| --- | --- | --- |
+| **Delay** | most | Time gap between the two copies (seconds). |
+| **Red/Green/Blue delay** + **Greyscale** | RGB | Per-channel delays; greyscale gives the rainbow-on-grey look, off keeps real colour. |
+| **Strength** | Blend | Opacity of the inverted layer (`0.50` = clean cancellation). |
+| **Gain** | Matte/Glow/Vanishing | Amplifies the extracted motion. |
+| **Memory** | Vanishing | How long until still things are absorbed and vanish. |
+| **Trail decay** | History | How quickly the motion map fades. |
+| **Freeze reference** | single-delay methods | Compare against one frozen moment so change accumulates. |
+| **Saturation / Brightness / Contrast** | all | Post tone — `Saturation 0%` = mono, high = vivid. |
+| **Blur** | all | Suppress fine detail / set the Glow bloom size. |
+| **Tint hue / amount** | all | Recolour the result toward a chosen hue. |
+| **Reveal original** | all | Fade the effect back over the real video. |
 
 ## Install (unpacked)
 
@@ -89,11 +77,14 @@ global via `<script>` or through `require()`/bundlers.
 
 ```js
 const fx = MotionEffect.create(outputCanvas);
-fx.setSettings({ mode: 'black', delaySeconds: 0.1, saturation: 1.5 });
+
+// apply a built-in preset (merge onto DEFAULTS so nothing leaks between presets)
+const preset = MotionEffect.PRESETS[2];               // e.g. "Motion on black"
+fx.setSettings({ ...MotionEffect.DEFAULTS, ...preset.settings });
 
 function loop() {
   requestAnimationFrame(loop);
-  if (source.readyState >= 2) fx.render(source); // call once per frame
+  if (source.readyState >= 2) fx.render(source);       // call once per frame
 }
 loop();
 ```
@@ -101,35 +92,32 @@ loop();
 - `MotionEffect.create(canvas)` → an effect bound to that output canvas.
 - `fx.render(source)` — `source` is anything `drawImage` accepts: a `<video>`
   (including a `getUserMedia` webcam stream), `<img>` or `<canvas>`.
-- `fx.setSettings({...})` — any of `mode`, `delaySeconds`, `delayR/G/B`,
-  `strength`, `reveal`, `blur`, `tint`, `saturation`, `frozen`.
-- `fx.reset()` — clear the frame history.
-- `MotionEffect.MODES` / `MotionEffect.MAX_DELAY_SECONDS` — for building UI.
+- `fx.setSettings({...})` — any subset of the parameters; see
+  `MotionEffect.DEFAULTS` for the full list and their defaults.
+- `fx.reset()` — clear the frame history / accumulators.
+- `MotionEffect.MODES` (methods), `MotionEffect.PRESETS` (built-in looks),
+  `MotionEffect.DEFAULTS`, `MotionEffect.MAX_DELAY_SECONDS` — for building UI.
 
-The canvas's pixel size is managed by the engine; size it on screen with CSS.
-`webcam.js` is a ~60-line end-to-end example.
+A preset is just `{ name, settings }`; persist your own with `localStorage` (or
+`chrome.storage`) and merge them the same way. The canvas's pixel size is managed
+by the engine; size it on screen with CSS. `webcam.js` is an end-to-end example.
 
 ## Adding new looks
 
-The simplest looks (`kind: 'overlay'`) are one row in the `MODES` table in
+Most new looks need **no code** — pick a method, dial in the controls, and
+**Save as…**. To ship one as a built-in, add a row to `PRESETS` in
 `motionEffect.js`:
 
 ```js
-mono: { label: 'Motion (mono)', kind: 'overlay',
-        base: 'grayscale(1)', overlay: 'grayscale(1) invert(1)', canvas: 'none' },
+{ name: 'My look', settings: { mode: 'rgb', delayG: 0.2, delayB: 0.4, saturation: 2 } },
 ```
 
-- `base` — [CSS filter](https://developer.mozilla.org/en-US/docs/Web/CSS/filter)
-  on the current frame (bottom layer).
-- `overlay` — filter on the delayed frame (top layer). **Keep `invert(1)`** or
-  the cancellation breaks.
-- `canvas` — filter applied to the finished result (post-processing).
+It then appears automatically in the popup, the test bench and the webcam demo
+(they read `MODES`/`PRESETS`/`DEFAULTS` from the engine).
 
-Add a row and it appears automatically in both the popup and the test bench
-(the popup reads the mode list, with each mode's `kind`, from the content
-script). The other `kind`s — `difference`, `mask`, `glow`, `rgb` — use custom
-render paths in `render()`; copy whichever is closest as a starting point for a
-new multi-frame composite.
+To add a whole new **method** (a new compositing pipeline), add an entry to
+`MODES` with a `kind` and a matching branch in `render()` — the existing
+`difference` / `mask` / `glow` / `rgb` branches are good starting points.
 
 ## Notes / limitations
 
