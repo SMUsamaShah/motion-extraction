@@ -1,30 +1,71 @@
+<!DOCTYPE html>
 <html>
-<style>
-    #canvasWrapper {
-        position: relative;
-    }
-
-    #SourceVideo {
-        display: none;
-    }
-</style>
-
+<head>
+  <meta charset="utf-8">
+  <title>Motion Extraction — test bench</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font: 13px system-ui, sans-serif; margin: 0; background: #111; color: #eee; display: flex; height: 100vh; }
+    #panel { width: 240px; flex: none; padding: 12px; overflow-y: auto; background: #181818; border-right: 1px solid #000; }
+    #stage { flex: 1; position: relative; display: grid; place-items: center; min-width: 0; }
+    #stage video, #stage canvas { max-width: 100%; max-height: 100vh; }
+    #out { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+    h1 { font-size: 14px; margin: 0 0 10px; }
+    .row { margin: 9px 0; }
+    label { display: block; margin-bottom: 3px; }
+    .val { float: right; color: #999; }
+    input[type=range], select, input[type=text] { width: 100%; box-sizing: border-box; }
+    .check { display: flex; gap: 6px; align-items: center; }
+    .check input { width: auto; } .check label { display: inline; margin: 0; }
+    button { padding: 6px 8px; cursor: pointer; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 5px; }
+    .presetbar { display: flex; gap: 6px; } .presetbar button { flex: 1; }
+    hr { border: none; border-top: 1px solid #333; margin: 11px 0; }
+    .sub { font-size: 11px; color: #888; margin: 4px 0; }
+    a { color: #6cf; }
+  </style>
+</head>
 <body>
-    <input type="file" id="videoFile" accept="video/*"><br>
-    <input type="text" id="videoURL" placeholder="Enter video URL"><br>
-    <button id="startButton">Start</button><br>
-    
-    <!-- Slider for opacity control -->
-    <br>
-    <input style="width: 100%" type="range" id="rangeOpacity" min="0" max="1" step="0.01" value="0.5">
-    <input style="width: 100%" type="range" id="delay" min="0" max="200" step="1" value="1">
-    <video style="display: block;" id="sVideo" src="waterfall.mp4" loop controls muted autoplay crossorigin="anonymous"></video>
-    <div id="canvasWrapper" style="position: relative;">
-        <canvas id="originalCanvas" style="position: absolute; top: 0; left: 0;"></canvas>
-        <canvas id="invertedCanvas" style="position: absolute; top: 0; left: 0;"></canvas>
-    </div>
+  <div id="panel">
+    <h1>Motion Extraction</h1>
 
+    <div class="row"><input type="file" id="file" accept="video/*"></div>
+    <div class="row"><input type="text" id="url" placeholder="…or CORS video URL"></div>
+    <div class="row presetbar"><button id="load">Load</button><button id="showSource">Source</button></div>
+
+    <hr>
+    <div class="row"><label>Preset</label><select id="preset"></select></div>
+    <div class="row presetbar"><button id="save">Save as…</button><button id="del">Delete</button></div>
+    <div class="row"><label>Method</label><select id="mode"></select></div>
+
+    <div class="row" data-for="motion black isolate over anaglyph history">
+      <label>Delay <span class="val" id="delayVal"></span></label><input type="range" id="delay" min="0" max="5" step="0.01"></div>
+    <div class="row" data-for="rgb"><label>Red delay <span class="val" id="delayRVal"></span></label><input type="range" id="delayR" min="0" max="5" step="0.01"></div>
+    <div class="row" data-for="rgb"><label>Green delay <span class="val" id="delayGVal"></span></label><input type="range" id="delayG" min="0" max="5" step="0.01"></div>
+    <div class="row" data-for="rgb"><label>Blue delay <span class="val" id="delayBVal"></span></label><input type="range" id="delayB" min="0" max="5" step="0.01"></div>
+    <div class="row check" data-for="rgb"><input type="checkbox" id="grayscale"><label for="grayscale">Greyscale</label></div>
+    <div class="row" data-for="motion"><label>Strength <span class="val" id="strengthVal"></span></label><input type="range" id="strength" min="0" max="1" step="0.01"></div>
+    <div class="row" data-for="isolate over ghost"><label>Gain <span class="val" id="gainVal"></span></label><input type="range" id="gain" min="0.2" max="6" step="0.1"></div>
+    <div class="row" data-for="ghost"><label>Memory <span class="val" id="memorySecondsVal"></span></label><input type="range" id="memorySeconds" min="0.1" max="5" step="0.1"></div>
+    <div class="row" data-for="history"><label>Trail decay <span class="val" id="decayVal"></span></label><input type="range" id="decay" min="0.002" max="0.2" step="0.002"></div>
+    <div class="row check" data-for="motion black isolate over anaglyph history"><input type="checkbox" id="frozen"><label for="frozen">Freeze reference</label></div>
+
+    <hr>
+    <p class="sub">Look (all methods)</p>
+    <div class="row"><label>Saturation <span class="val" id="saturationVal"></span></label><input type="range" id="saturation" min="0" max="3" step="0.05"></div>
+    <div class="row"><label>Brightness <span class="val" id="brightnessVal"></span></label><input type="range" id="brightness" min="0.2" max="3" step="0.05"></div>
+    <div class="row"><label>Contrast <span class="val" id="contrastVal"></span></label><input type="range" id="contrast" min="0.2" max="3" step="0.05"></div>
+    <div class="row"><label>Blur <span class="val" id="blurVal"></span></label><input type="range" id="blur" min="0" max="20" step="1"></div>
+    <div class="row"><label>Tint hue <span class="val" id="tintHueVal"></span></label><input type="range" id="tintHue" min="0" max="360" step="1"></div>
+    <div class="row"><label>Tint amount <span class="val" id="tintAmountVal"></span></label><input type="range" id="tintAmount" min="0" max="1" step="0.05"></div>
+    <div class="row"><label>Reveal original <span class="val" id="revealVal"></span></label><input type="range" id="reveal" min="0" max="1" step="0.01"></div>
+  </div>
+
+  <div id="stage">
+    <video id="src" loop muted playsinline controls crossorigin="anonymous"></video>
+    <canvas id="out"></canvas>
+  </div>
+
+  <script src="motionEffect.js"></script>
+  <script src="script.js"></script>
 </body>
-<script src="script.js"></script>
-
 </html>

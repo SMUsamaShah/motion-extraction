@@ -1,22 +1,20 @@
 {
-    "manifest_version": 3,
-    "name": "Invert Video Colors",
-    "version": "1.0",
-    "permissions": [
-      "storage",
-      "activeTab"
-    ],
-    "action": {
-      "default_popup": "popup.html"
-    },
-    "background": {
-      "service_worker": "background.js"
-    },
-    "content_scripts": [
-      {
-        "matches": ["http://*/*", "https://*/*"],
-        "js": ["contentScript.js"]
-      }
-    ]
-  }
-  
+  "manifest_version": 3,
+  "name": "Motion Extraction",
+  "description": "Show only the motion in any web video, using Posy's invert-and-delay technique.",
+  "version": "1.1",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Motion Extraction"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["motionEffect.js", "contentScript.js"]
+    }
+  ]
+}

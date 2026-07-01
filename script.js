@@ -1,80 +1,133 @@
-const video = document.getElementById('sVideo');
-const originalCanvas = document.getElementById('originalCanvas');
-const invertedCanvas = document.getElementById('invertedCanvas');
-const originalCtx = originalCanvas.getContext('2d');
-const invertedCtx = invertedCanvas.getContext('2d');
+// script.js
+// Standalone test bench — same controls + presets as the extension, driving the
+// shared MotionEffect core directly. User presets persist in localStorage.
 
-const rangeOpacity = document.getElementById('rangeOpacity');
-const rangeDelay = document.getElementById('delay');
+const video = document.getElementById('src');
+const out = document.getElementById('out');
+const fx = MotionEffect.create(out);
+const $ = id => document.getElementById(id);
 
-const maxFrames = 200;
-const framesBuffer = new Array(maxFrames);
-let frameDelay = 2;
-let currentFrame = 0;
-let lastPlayedTime = null;
+const FIELDS = [
+  { id: 'delay', key: 'delaySeconds', fmt: v => (+v).toFixed(2) + ' s' },
+  { id: 'delayR', key: 'delayR', fmt: v => (+v).toFixed(2) + ' s' },
+  { id: 'delayG', key: 'delayG', fmt: v => (+v).toFixed(2) + ' s' },
+  { id: 'delayB', key: 'delayB', fmt: v => (+v).toFixed(2) + ' s' },
+  { id: 'grayscale', key: 'grayscale', bool: true },
+  { id: 'strength', key: 'strength', fmt: v => (+v).toFixed(2) },
+  { id: 'gain', key: 'gain', fmt: v => (+v).toFixed(1) + '×' },
+  { id: 'memorySeconds', key: 'memorySeconds', fmt: v => (+v).toFixed(1) + ' s' },
+  { id: 'decay', key: 'decay', fmt: v => (+v).toFixed(3) },
+  { id: 'frozen', key: 'frozen', bool: true },
+  { id: 'saturation', key: 'saturation', fmt: v => Math.round(v * 100) + '%' },
+  { id: 'brightness', key: 'brightness', fmt: v => (+v).toFixed(2) },
+  { id: 'contrast', key: 'contrast', fmt: v => (+v).toFixed(2) },
+  { id: 'blur', key: 'blur', fmt: v => v + ' px' },
+  { id: 'tintHue', key: 'tintHue', fmt: v => v + '°' },
+  { id: 'tintAmount', key: 'tintAmount', fmt: v => (+v === 0 ? 'off' : Math.round(v * 100) + '%') },
+  { id: 'reveal', key: 'reveal', fmt: v => (+v).toFixed(2) },
+];
 
-const startButton = document.getElementById('startButton');
-const videoFile = document.getElementById('videoFile');
-const videoURL = document.getElementById('videoURL');
-startButton.addEventListener('click', () => {
-    if (videoFile.files.length > 0) {
-        const url = URL.createObjectURL(videoFile.files[0]);
-        loadVideo(url);
-    } else if (videoURL.value !== '') {
-        loadVideo(videoURL.value);
-    } else {
-        alert('Please select a file or enter a URL');
-    }
-});
+const defaults = MotionEffect.DEFAULTS;
+const builtins = MotionEffect.PRESETS;
+let userPresets = JSON.parse(localStorage.getItem('mxPresets') || '[]');
+let state = { ...defaults };
+const presetSel = $('preset');
 
-function loadVideo(url) {
-    video.src = url;
-    video.load();
-    video.play();
+for (const key in MotionEffect.MODES) $('mode').add(new Option(MotionEffect.MODES[key].label, key));
+
+function fillPresets() {
+  presetSel.innerHTML = '';
+  presetSel.add(new Option('— custom —', ''));
+  const g1 = document.createElement('optgroup'); g1.label = 'Presets';
+  builtins.forEach((p, i) => g1.appendChild(new Option(p.name, 'b:' + i)));
+  presetSel.appendChild(g1);
+  if (userPresets.length) {
+    const g2 = document.createElement('optgroup'); g2.label = 'Saved';
+    userPresets.forEach(p => g2.appendChild(new Option(p.name, 'u:' + p.name)));
+    presetSel.appendChild(g2);
+  }
 }
 
-// Play the video once it is loaded
-video.addEventListener('loadeddata', () => {
-    originalCanvas.width = video.videoWidth;
-    originalCanvas.height = video.videoHeight;
-    invertedCanvas.width = video.videoWidth;
-    invertedCanvas.height = video.videoHeight;
-    function draw() {
-        //skip duplicate frames
-        var currentTime = video.currentTime;
-        if (currentTime === lastPlayedTime) {
-            requestAnimationFrame(draw);
-            return;
-        }
-        lastPlayedTime = currentTime;
+function settings() {
+  const s = { mode: state.mode };
+  for (const f of FIELDS) s[f.key] = f.bool ? !!state[f.key] : +state[f.key];
+  return s;
+}
 
-        // Draw video to original canvas
-        originalCtx.drawImage(video, 0, 0, originalCanvas.width, originalCanvas.height);
+function reflect() {
+  $('mode').value = state.mode;
+  for (const f of FIELDS) {
+    const el = $(f.id);
+    if (f.bool) el.checked = !!state[f.key];
+    else { el.value = state[f.key]; $(f.id + 'Val').textContent = f.fmt(state[f.key]); }
+  }
+  document.querySelectorAll('[data-for]').forEach(el => {
+    el.style.display = el.dataset.for.split(' ').includes(state.mode) ? '' : 'none';
+  });
+  fx.setSettings(settings());
+}
 
-        // Get frame data from original canvas and invert colors
-        let imageData = originalCtx.getImageData(0, 0, originalCanvas.width, originalCanvas.height);
-        let data = imageData.data;
+function applyPreset(p) { state = Object.assign({ ...defaults }, p.settings); reflect(); }
 
-        //Invert color of each pixel
-        for (let i = 0; i < data.length; i += 4) {
-            data[i] = 255 - data[i];         // red
-            data[i + 1] = 255 - data[i + 1]; // green
-            data[i + 2] = 255 - data[i + 2]; // blue
-        }
-        framesBuffer[currentFrame] = imageData;
-        currentFrame = (currentFrame + 1) % maxFrames;
-
-        let delayedFramee = framesBuffer[Math.abs((currentFrame + maxFrames - frameDelay) % maxFrames)];
-        if (delayedFramee) {
-            invertedCtx.putImageData(delayedFramee, 0, 0);
-        }
-
-        // Apply opacity from slider
-        invertedCanvas.style.opacity = rangeOpacity.valueAsNumber;
-        invertedCtx.globalCompositeOperation = "lighter";
-        frameDelay = rangeDelay.valueAsNumber;
-
-        requestAnimationFrame(draw);
-    }
-    draw();
+presetSel.addEventListener('change', () => {
+  const v = presetSel.value;
+  if (v.startsWith('b:')) applyPreset(builtins[+v.slice(2)]);
+  else if (v.startsWith('u:')) { const p = userPresets.find(x => x.name === v.slice(2)); if (p) applyPreset(p); }
 });
+
+$('mode').addEventListener('change', () => { state.mode = $('mode').value; presetSel.value = ''; reflect(); });
+
+for (const f of FIELDS) {
+  $(f.id).addEventListener(f.bool ? 'change' : 'input', () => {
+    const el = $(f.id);
+    state[f.key] = f.bool ? el.checked : el.value;
+    presetSel.value = '';
+    if (!f.bool) $(f.id + 'Val').textContent = f.fmt(state[f.key]);
+    fx.setSettings(settings());
+  });
+}
+
+$('save').addEventListener('click', () => {
+  const name = (prompt('Save preset as:') || '').trim();
+  if (!name) return;
+  userPresets = userPresets.filter(p => p.name !== name).concat([{ name, settings: settings() }]);
+  localStorage.setItem('mxPresets', JSON.stringify(userPresets));
+  fillPresets();
+  presetSel.value = 'u:' + name;
+});
+
+$('del').addEventListener('click', () => {
+  const v = presetSel.value;
+  if (!v.startsWith('u:')) return;
+  userPresets = userPresets.filter(p => p.name !== v.slice(2));
+  localStorage.setItem('mxPresets', JSON.stringify(userPresets));
+  fillPresets();
+  presetSel.value = '';
+});
+
+// --- source + render ---
+function loadVideo(src) { video.src = src; video.play().catch(() => {}); }
+$('load').addEventListener('click', () => {
+  const file = $('file').files[0], url = $('url').value.trim();
+  if (file) loadVideo(URL.createObjectURL(file));
+  else if (url) loadVideo(url);
+  else alert('Pick a file or paste a URL first.');
+});
+$('showSource').addEventListener('click', () => {
+  out.style.visibility = out.style.visibility === 'hidden' ? 'visible' : 'hidden';
+});
+
+let lastTime = -1;
+function frame() {
+  requestAnimationFrame(frame);
+  if (video.readyState < 2) return;
+  out.style.width = video.clientWidth + 'px';
+  out.style.height = video.clientHeight + 'px';
+  if (video.currentTime === lastTime) return;
+  lastTime = video.currentTime;
+  fx.render(video);
+}
+
+fillPresets();
+reflect();
+frame();
